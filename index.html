@@ -1,0 +1,1601 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="theme-color" content="#F5F6F8">
+<title>Dan's Health Log</title>
+<link rel="manifest" href="manifest.json">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#F5F6F8;--surface:#FFFFFF;
+  --ink:#0A0E1A;--ink2:#3A3F4B;--ink3:#7A7F8C;--ink4:#B8BCC6;
+  --line:#E8EAEF;
+  --accent:#1E4FE8;--as:#E7EDFF;
+  --good:#0FA968;--warn:#E78A1F;--hi:#D8413A;--pink:#D946A1;--sleep:#6E5BD8;
+  --safe-top:env(safe-area-inset-top,0px);--safe-bottom:env(safe-area-inset-bottom,0px);
+  --f:'Inter',-apple-system,system-ui,sans-serif;
+}
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+html,body{height:100%;overflow:hidden;background:var(--bg)}
+body{font-family:var(--f);color:var(--ink);font-variant-numeric:tabular-nums}
+::-webkit-scrollbar{width:3px;height:3px}
+::-webkit-scrollbar-thumb{background:var(--line);border-radius:2px}
+
+/* PIN */
+#pin-screen{position:fixed;inset:0;background:var(--bg);z-index:1000;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:calc(var(--safe-top)+40px) 28px calc(var(--safe-bottom)+40px)}
+#pin-screen.hidden{display:none}
+.pin-logo{width:56px;height:56px;border-radius:16px;background:var(--accent);display:flex;align-items:center;justify-content:center;box-shadow:0 8px 20px rgba(30,79,232,.25);margin-bottom:22px}
+.pin-welcome{font-size:11px;font-weight:600;color:var(--ink3);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px;text-align:center}
+.pin-title-txt{font-size:24px;font-weight:700;color:var(--ink);letter-spacing:-.4px;margin-bottom:32px;text-align:center}
+.pin-dots{display:flex;gap:14px;margin-bottom:40px}
+.pin-dots.shake{animation:shake .35s}
+.pin-dot{width:14px;height:14px;border-radius:14px;border:2px solid #CDD2DA;background:transparent;transition:all .15s}
+.pin-dot.filled{background:var(--accent);border-color:var(--accent)}
+.pin-dot.error{background:var(--hi);border-color:var(--hi)}
+@keyframes shake{0%,100%{transform:translateX(0)}25%{transform:translateX(-8px)}75%{transform:translateX(8px)}}
+.pin-pad{display:grid;grid-template-columns:repeat(3,70px);gap:12px}
+.pin-key{width:70px;height:70px;border-radius:999px;border:1px solid var(--line);background:var(--surface);font-size:26px;font-weight:500;color:var(--ink);cursor:pointer;display:flex;align-items:center;justify-content:center;transition:background .1s;font-family:var(--f)}
+.pin-key:active{background:var(--as)}
+.pin-key.del{border:none;background:transparent;color:var(--ink3)}
+.pin-key.empty{background:transparent;border:none;cursor:default;pointer-events:none}
+
+/* APP */
+#app{display:none;flex-direction:column;height:100vh;height:100dvh;position:relative;overflow:hidden}
+#topbar{padding:calc(var(--safe-top)+12px) 18px 10px;display:flex;justify-content:space-between;align-items:center;background:rgba(245,246,248,.86);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);flex-shrink:0;z-index:20}
+.topbar-title{font-size:13px;font-weight:700;color:var(--ink);letter-spacing:.3px;text-transform:uppercase}
+.topbar-sync{display:flex;align-items:center;gap:6px;font-size:10px;color:var(--ink3);font-weight:500}
+.sync-dot{width:6px;height:6px;border-radius:50%;background:var(--ink4);transition:background .3s}
+.sync-dot.ok{background:var(--good)}.sync-dot.busy{background:var(--warn)}.sync-dot.err{background:var(--hi)}
+#content{flex:1;overflow-y:auto;overscroll-behavior:contain;padding-bottom:16px}
+.page{display:none;padding:10px 18px 4px}.page.active{display:block}
+
+/* FLOATING NAV */
+#nav{flex:none;margin:6px 14px 0;background:var(--surface);border-radius:18px;box-shadow:0 8px 24px rgba(15,30,60,.08),0 0 0 1px rgba(15,30,60,.06);display:flex;padding:4px;z-index:15}
+.nav-item{flex:1;padding:8px 0 6px;border:none;border-radius:14px;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:2px;background:transparent;color:var(--ink3);font-family:var(--f);transition:all .15s}
+.nav-item svg{display:block;width:22px;height:22px}
+.nav-item span{font-size:9px;font-weight:700;letter-spacing:.3px;text-transform:uppercase}
+.nav-item.active{background:var(--as);color:var(--accent)}
+
+/* COMPOSER */
+#composer{flex:none;padding:8px 14px 14px;padding-bottom:max(14px,calc(var(--safe-bottom)+6px));background:rgba(245,246,248,.92);backdrop-filter:blur(18px) saturate(180%);-webkit-backdrop-filter:blur(18px) saturate(180%);border-top:1px solid var(--line);z-index:10}
+#composer-parsed{background:var(--surface);border:1px solid var(--accent);border-radius:14px;padding:12px;margin-bottom:8px;display:none}
+#composer-parsed.show{display:block}
+.parsed-label{font-size:10px;font-weight:700;color:var(--accent);text-transform:uppercase;letter-spacing:.6px;margin-bottom:6px}
+.parsed-row{display:flex;justify-content:space-between;font-size:13px;padding:3px 0;border-top:1px solid var(--line)}
+.parsed-row:first-of-type{border:none}
+.pr-k{color:var(--ink3)}.pr-v{color:var(--ink);font-weight:600}
+.parsed-actions{display:flex;gap:6px;margin-top:10px}
+.pb{flex:1;padding:8px 0;border-radius:10px;font-size:12px;font-weight:600;cursor:pointer;font-family:var(--f);transition:all .15s}
+.pb.discard{border:1px solid var(--line);background:transparent;color:var(--ink3)}
+.pb.save{flex:2;border:none;background:var(--accent);color:#fff}
+#composer-pill{display:flex;align-items:center;gap:8px;background:var(--surface);border:1px solid var(--line);border-radius:22px;padding:8px 10px 8px 16px;min-height:44px}
+#composer-input{flex:1;border:0;outline:0;background:transparent;font-size:16px;color:var(--ink);font-family:var(--f);padding:6px 0;min-width:0}
+#composer-input::placeholder{color:var(--ink4)}
+.cbtn{width:32px;height:32px;border-radius:999px;border:0;background:var(--accent);color:#fff;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:transform .1s}
+.cbtn:active{transform:scale(.92)}.cbtn.danger{background:var(--hi);box-shadow:0 0 0 4px rgba(216,65,58,.2)}
+.c-wave{display:flex;gap:2px;align-items:center;height:18px;margin-right:2px}
+.c-wave-b{width:2.5px;border-radius:2px;background:var(--hi)}
+.c-spin{width:18px;height:18px;border-radius:999px;border:2px solid var(--line);border-top-color:var(--accent);animation:spin .8s linear infinite;flex-shrink:0}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* CARDS */
+.card{background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:14px;margin-bottom:10px}
+.card.hero{border-radius:20px;padding:18px 18px 10px}
+.clabel{font-size:11px;font-weight:600;color:var(--ink3);text-transform:uppercase;letter-spacing:.6px}
+.chart-scroll{overflow-x:auto;overflow-y:hidden;-webkit-overflow-scrolling:touch;scrollbar-width:none}
+.chart-scroll::-webkit-scrollbar{display:none}
+
+/* DASHBOARD */
+.dash-day{font-size:13px;color:var(--ink3);font-weight:500;letter-spacing:.2px;margin-bottom:2px}
+.dash-greeting{font-size:28px;font-weight:700;letter-spacing:-.5px;color:var(--ink);margin-bottom:18px;line-height:1.15}
+.bp-big{font-size:44px;font-weight:700;letter-spacing:-1.2px;color:var(--ink);line-height:1}
+.bp-slash{font-size:22px;color:var(--ink4);font-weight:400;margin:0 6px}
+.bp-dia{font-size:28px;font-weight:600;color:var(--ink2)}
+.bp-unit{font-size:11px;color:var(--ink3);margin-left:6px}
+.bp-status{font-size:12px;font-weight:600;margin-top:8px;display:flex;align-items:center;gap:4px}
+.sdot{width:7px;height:7px;border-radius:50%;display:inline-block;flex-shrink:0}
+.bp-meta{text-align:right}
+.bp-meta-day{font-size:11px;color:var(--ink3)}
+.bp-meta-count{font-size:10px;color:var(--ink4);margin-top:2px}
+.tile-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px}
+.tile-hdr{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:6px}
+.tile-avg{text-align:right}
+.tile-avg-lbl{font-size:9px;color:var(--ink3);letter-spacing:.3px}
+.tile-avg-num{font-size:13px;font-weight:600;color:var(--ink2)}
+.tile-big{font-size:28px;font-weight:700;color:var(--ink);line-height:1}
+.tile-unit{font-size:13px;color:var(--ink4);margin-left:2px}
+.tile-hint{font-size:10px;color:var(--ink4);margin-top:6px}
+.bars-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none;margin-top:8px}
+.bars-wrap::-webkit-scrollbar{display:none}
+.bars-inner{display:flex;gap:3px;align-items:flex-end;width:max-content;min-width:100%}
+.bowel-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none}
+.bowel-wrap::-webkit-scrollbar{display:none}
+.bowel-grid{display:grid;grid-template-rows:1fr 1fr;grid-auto-flow:column;grid-auto-columns:18px;gap:3px;width:max-content}
+.bowel-cell{border-radius:4px;border:none;cursor:pointer;font-family:var(--f);display:block;width:100%;height:100%}
+.bowel-legend{display:flex;gap:12px;margin-top:10px;font-size:10px;color:var(--ink3)}
+.legend-dot{width:8px;height:8px;border-radius:50%;display:inline-block;margin-right:4px;vertical-align:middle}
+.dash-med-row{display:flex;justify-content:space-between;padding:6px 0;border-top:1px solid var(--line)}
+
+/* LOG PAGE */
+.log-title{font-size:24px;font-weight:700;color:var(--ink);letter-spacing:-.4px;margin-bottom:14px}
+.log-tabs{display:flex;gap:6px;background:#EEF0F4;padding:4px;border-radius:12px;margin-bottom:18px;overflow-x:auto;scrollbar-width:none}
+.log-tabs::-webkit-scrollbar{display:none}
+.log-tab{flex:1;min-width:max-content;padding:8px 10px;border:none;border-radius:9px;background:transparent;color:var(--ink3);font-size:11px;font-weight:600;cursor:pointer;font-family:var(--f);white-space:nowrap;transition:all .15s}
+.log-tab.active{background:var(--surface);color:var(--ink);box-shadow:0 1px 3px rgba(0,0,0,.06)}
+.lfield{margin-bottom:14px}
+.llabel{font-size:11px;font-weight:600;color:var(--ink3);text-transform:uppercase;letter-spacing:.4px;margin-bottom:6px}
+.linput{width:100%;padding:12px 14px;border-radius:12px;border:1px solid var(--line);background:var(--surface);font-size:16px;color:var(--ink);font-family:var(--f);outline:none;transition:border-color .2s}
+.linput:focus{border-color:var(--accent)}
+.linput.center{text-align:center;font-size:22px;font-weight:600;padding:14px 8px}
+.g3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px}
+.g3-sub{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-top:6px;font-size:10px;color:var(--ink3);text-align:center;font-weight:600;letter-spacing:.4px;text-transform:uppercase}
+.scale-row{display:flex;gap:8px}
+.sbtn{flex:1;padding:14px 0;border-radius:12px;border:1px solid var(--line);background:var(--surface);font-size:18px;font-weight:700;color:var(--ink3);cursor:pointer;font-family:var(--f);transition:all .15s}
+.sbtn.active{border:2px solid var(--accent);background:var(--as);color:var(--accent)}
+.scale-caps{display:flex;justify-content:space-between;margin-top:6px;font-size:10px;color:var(--ink3);font-weight:500}
+.bristol-list{display:flex;flex-direction:column;gap:6px}
+.brow{padding:12px 14px;border-radius:12px;border:1px solid var(--line);background:var(--surface);text-align:left;cursor:pointer;font-size:14px;color:var(--ink);font-family:var(--f);display:flex;align-items:center;gap:8px;transition:all .15s}
+.brow.active{border:2px solid var(--accent);background:var(--as)}
+.bcode{font-weight:700;color:var(--accent)}.bcode.danger{color:var(--hi)}
+.chips-wrap{display:flex;flex-wrap:wrap;gap:6px}
+.chip{padding:8px 14px;border-radius:999px;border:1px solid var(--line);background:var(--surface);color:var(--ink2);font-size:12px;font-weight:500;cursor:pointer;font-family:var(--f);transition:all .12s}
+.chip.active{border-color:var(--accent);background:var(--accent);color:#fff}
+.check-list{display:flex;flex-direction:column;gap:6px}
+.check-row{padding:12px 14px;border-radius:12px;border:1px solid var(--line);background:var(--surface);display:flex;align-items:center;gap:12px;cursor:pointer;font-size:14px;color:var(--ink);font-family:var(--f);text-align:left;transition:all .15s}
+.check-row.active{border:2px solid var(--accent);background:var(--as);color:var(--accent);font-weight:600}
+.cbox{width:20px;height:20px;border-radius:6px;flex-shrink:0;border:1.5px solid #CDD2DA;background:transparent;display:flex;align-items:center;justify-content:center;transition:all .15s}
+.check-row.active .cbox{background:var(--accent);border-color:var(--accent)}
+.loc-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin-bottom:8px}
+.locbtn{padding:14px 4px;border-radius:12px;position:relative;border:1px solid var(--line);background:var(--surface);font-size:14px;font-weight:500;color:var(--ink);cursor:pointer;font-family:var(--f);transition:all .15s}
+.locbtn.active{border:2px solid var(--accent);background:var(--as)}
+.auto-badge{position:absolute;top:4px;right:4px;font-size:9px;font-weight:600;color:var(--accent);background:#fff;padding:1px 5px;border-radius:4px;border:1px solid var(--accent);letter-spacing:.3px}
+.loc-helper{padding:8px 12px;border-radius:10px;background:var(--surface);border:1px solid var(--line);font-size:11px;color:var(--ink3);display:flex;align-items:center;gap:8px}
+.fit-grid{display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:6px}
+.fitbtn{padding:12px 2px;border-radius:12px;border:1px solid var(--line);background:var(--surface);font-size:11px;font-weight:500;color:var(--ink);cursor:pointer;font-family:var(--f);transition:all .15s}
+.fitbtn.active{border:2px solid var(--accent);background:var(--as)}
+.btn-save{width:100%;padding:14px;border-radius:14px;border:none;background:var(--accent);color:#fff;font-size:15px;font-weight:600;cursor:pointer;font-family:var(--f);margin-top:8px;transition:all .15s}
+.btn-save:active{transform:scale(.97)}.btn-save:disabled{opacity:.5;cursor:not-allowed;transform:none}
+
+/* HISTORY */
+.hist-header{display:flex;justify-content:space-between;align-items:flex-end;margin-bottom:12px}
+.hist-title{font-size:24px;font-weight:700;color:var(--ink);letter-spacing:-.4px}
+.range-pill{display:flex;gap:4px;background:#EEF0F4;padding:3px;border-radius:9px}
+.rbtn{padding:4px 10px;border:none;border-radius:6px;background:transparent;color:var(--ink3);font-size:11px;font-weight:600;cursor:pointer;font-family:var(--f);transition:all .15s}
+.rbtn.active{background:var(--surface);color:var(--ink);box-shadow:0 1px 2px rgba(0,0,0,.05)}
+.fchips{display:flex;gap:5px;margin-bottom:14px;overflow-x:auto;scrollbar-width:none;padding-bottom:4px}
+.fchips::-webkit-scrollbar{display:none}
+.fchip{padding:6px 11px;border-radius:999px;flex-shrink:0;border:1px solid var(--line);background:var(--surface);color:var(--ink2);font-size:11px;font-weight:600;cursor:pointer;font-family:var(--f);white-space:nowrap;transition:all .15s}
+.fchip.active{color:#fff}
+.hist-day-lbl{font-size:11px;font-weight:600;color:var(--ink3);text-transform:uppercase;letter-spacing:.6px;margin-top:16px;margin-bottom:8px}
+.hist-day-lbl:first-child{margin-top:0}
+.hentry{display:flex;gap:12px;padding:10px 0;border-bottom:1px solid var(--line)}
+.hicon{width:32px;height:32px;border-radius:10px;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:700}
+.hentry-title{font-size:14px;font-weight:600;color:var(--ink)}
+.hentry-sub{font-size:12px;color:var(--ink3);margin-top:2px}
+.hentry-time{font-size:11px;color:var(--ink4)}
+
+/* MEDS */
+.meds-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:14px}
+.meds-title{font-size:24px;font-weight:700;color:var(--ink);letter-spacing:-.4px}
+.btn-add{background:var(--accent);color:#fff;border:none;border-radius:999px;padding:8px 14px;font-size:12px;font-weight:600;cursor:pointer;font-family:var(--f)}
+.meds-slabel{font-size:11px;font-weight:600;color:var(--ink3);text-transform:uppercase;letter-spacing:.6px;margin-bottom:8px}
+.med-card{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:14px;margin-bottom:8px;display:flex;justify-content:space-between;gap:12px;transition:opacity .2s}
+.med-card.inactive{opacity:.55}
+.med-card-name{font-size:15px;font-weight:600;color:var(--ink);margin-bottom:2px}
+.med-card-sub{font-size:12px;color:var(--ink3)}
+.med-card-times{display:flex;gap:4px;flex-wrap:wrap;margin-top:8px}
+.med-tchip{font-size:11px;font-weight:500;padding:3px 8px;border-radius:999px;background:var(--as);color:var(--accent)}
+.med-pbtn{align-self:flex-start;padding:6px 12px;border-radius:999px;border:1px solid var(--line);background:transparent;color:var(--ink3);font-size:11px;font-weight:600;cursor:pointer;font-family:var(--f)}
+.med-pbtn.resume{border-color:var(--accent);background:var(--accent);color:#fff}
+
+/* ADD MED SHEET */
+#add-med-sheet{position:absolute;inset:0;z-index:60;display:none}
+#add-med-sheet.open{display:block}
+#add-med-backdrop{position:absolute;inset:0;background:rgba(15,20,40,.35);backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px);animation:fadeIn .25s}
+#add-med-panel{position:absolute;left:0;right:0;bottom:0;top:calc(var(--safe-top)+80px);background:var(--bg);border-radius:24px 24px 0 0;display:flex;flex-direction:column;box-shadow:0 -8px 32px rgba(0,0,0,.12);animation:slideUp .3s cubic-bezier(.2,.7,.3,1)}
+.sgrab{width:40px;height:4px;border-radius:4px;background:var(--ink4);opacity:.5;margin:10px auto 4px}
+.shdr{padding:12px 18px 14px;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid var(--line)}
+.stitle{font-size:16px;font-weight:600;color:var(--ink)}
+.scancel{background:transparent;border:none;cursor:pointer;font-family:var(--f);font-size:14px;color:var(--ink3);padding:0}
+.ssave{background:transparent;border:none;font-family:var(--f);font-size:14px;font-weight:600;padding:0;color:var(--accent);cursor:pointer}
+.ssave:disabled{color:var(--ink4);cursor:not-allowed}
+.sbody{flex:1;overflow-y:auto;padding:18px}
+.sfield{margin-bottom:14px}
+.slabel{font-size:11px;font-weight:600;color:var(--ink3);text-transform:uppercase;letter-spacing:.4px;margin-bottom:6px}
+.sinput{width:100%;padding:11px 14px;border-radius:12px;border:1px solid var(--line);background:var(--surface);font-size:16px;color:var(--ink);font-family:var(--f);outline:none;transition:border-color .2s}
+.sinput:focus{border-color:var(--accent)}
+.type-grid{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+.typebtn{padding:10px 6px;border-radius:10px;border:1px solid var(--line);background:var(--surface);font-size:12px;font-weight:500;color:var(--ink);cursor:pointer;font-family:var(--f);transition:all .15s}
+.typebtn.active{border:2px solid var(--accent);background:var(--as)}
+
+/* DAY SHEET */
+#day-sheet{position:absolute;inset:0;z-index:70;display:none}
+#day-sheet.open{display:block}
+#day-backdrop{position:absolute;inset:0;background:rgba(15,20,40,.35);backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px);animation:fadeIn .2s}
+#day-panel{position:absolute;left:0;right:0;bottom:0;background:var(--bg);border-radius:22px 22px 0 0;max-height:74%;overflow-y:auto;box-shadow:0 -8px 32px rgba(0,0,0,.18);animation:slideUp .28s cubic-bezier(.2,.7,.3,1);padding:12px 18px calc(20px + var(--safe-bottom))}
+.dsec{margin-bottom:14px}
+.dsec-title{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;margin-bottom:6px}
+.drow{padding:6px 0;border-top:1px solid var(--line)}
+.drow-kv{display:flex;justify-content:space-between;font-size:13px}
+.drow-k{color:var(--ink3)}.drow-v{color:var(--ink);font-weight:600;text-align:right;max-width:55%}
+.drow-note{font-size:11px;color:var(--ink3);margin-top:2px;font-style:italic}
+.dempty{font-size:12px;color:var(--ink4);font-style:italic}
+
+/* TOAST */
+#toast{position:absolute;top:calc(var(--safe-top)+70px);left:50%;transform:translateX(-50%);background:var(--ink);color:#fff;padding:8px 16px;border-radius:999px;font-size:12px;font-weight:500;z-index:300;opacity:0;transition:opacity .25s;pointer-events:none;white-space:nowrap}
+#toast.show{opacity:1}
+
+@keyframes fadeIn{from{opacity:0}to{opacity:1}}
+@keyframes slideUp{from{transform:translateY(40px);opacity:0}to{transform:translateY(0);opacity:1}}
+
+/* HOVER STATES (desktop) */
+@media(hover:hover){
+  .nav-item:hover{background:var(--as);color:var(--accent)}
+  .pin-key:hover{background:var(--as)}
+  .sbtn:hover{border-color:var(--accent);color:var(--accent)}
+  .chip:hover,.typebtn:hover,.fchip:hover,.rbtn:hover{border-color:var(--accent);color:var(--accent)}
+  .btn-save:hover{opacity:.88}
+  .cbtn:hover{opacity:.85}
+  .pb.save:hover{opacity:.88}
+  .med-card:hover{box-shadow:0 0 0 2px var(--line)}
+  .hentry:hover{background:var(--as)}
+  .bowel-cell:hover{opacity:.7}
+}
+/* FOCUS VISIBLE */
+button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+/* PIN ERROR MESSAGE */
+#pin-errmsg{font-size:12px;color:var(--hi);font-weight:500;min-height:16px;text-align:center;margin-top:-28px;margin-bottom:10px;opacity:0;transition:opacity .2s}
+#pin-errmsg.show{opacity:1}
+
+@media(min-width:640px){
+  body{background:#ECEDF0;display:flex;align-items:stretch;justify-content:center}
+  #app{max-width:480px;box-shadow:0 0 60px rgba(0,0,0,.12)}
+  #pin-screen{max-width:480px;left:50%;right:auto;transform:translateX(-50%);width:480px}
+}
+</style>
+</head>
+<body>
+
+<!-- PIN -->
+<div id="pin-screen">
+  <div class="pin-logo">
+    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+  </div>
+  <div class="pin-welcome" id="pin-mode-lbl">WELCOME BACK</div>
+  <div class="pin-title-txt" id="pin-subtitle">Dan's Health Log</div>
+  <div class="pin-dots" id="pin-dots">
+    <div class="pin-dot" id="pd0"></div><div class="pin-dot" id="pd1"></div>
+    <div class="pin-dot" id="pd2"></div><div class="pin-dot" id="pd3"></div>
+  </div>
+  <div id="pin-errmsg"></div>
+  <div class="pin-pad">
+    <button class="pin-key" onclick="pinKey('1')">1</button><button class="pin-key" onclick="pinKey('2')">2</button><button class="pin-key" onclick="pinKey('3')">3</button>
+    <button class="pin-key" onclick="pinKey('4')">4</button><button class="pin-key" onclick="pinKey('5')">5</button><button class="pin-key" onclick="pinKey('6')">6</button>
+    <button class="pin-key" onclick="pinKey('7')">7</button><button class="pin-key" onclick="pinKey('8')">8</button><button class="pin-key" onclick="pinKey('9')">9</button>
+    <div class="pin-key empty"></div>
+    <button class="pin-key" onclick="pinKey('0')">0</button>
+    <button class="pin-key del" onclick="pinDel()">
+      <svg width="22" height="20" viewBox="0 0 22 18" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M6 1 1 9l5 8h13a2 2 0 0 0 2-2V3a2 2 0 0 0-2-2H6Z"/><path d="m12 5-5 8M7 5l5 8"/>
+      </svg>
+    </button>
+  </div>
+</div>
+
+<!-- APP -->
+<div id="app">
+  <div id="topbar">
+    <div class="topbar-title">Health Log</div>
+    <div class="topbar-sync"><div class="sync-dot" id="sync-dot"></div><span id="sync-label">—</span></div>
+  </div>
+  <div id="content">
+    <div class="page active" id="page-today"></div>
+    <div class="page" id="page-log"></div>
+    <div class="page" id="page-history"></div>
+    <div class="page" id="page-meds"></div>
+  </div>
+
+  <!-- FLOATING NAV -->
+  <div id="nav">
+  <button class="nav-item active" onclick="navTo('today',this)">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+    <span>HOME</span>
+  </button>
+  <button class="nav-item" onclick="navTo('log',this)">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+    <span>LOG</span>
+  </button>
+  <button class="nav-item" onclick="navTo('history',this)">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><polyline points="3 12 7 12 10 4 14 20 17 12 21 12"/></svg>
+    <span>HISTORY</span>
+  </button>
+  <button class="nav-item" onclick="navTo('meds',this)">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="9" width="18" height="6" rx="3"/><line x1="12" y1="9" x2="12" y2="15"/></svg>
+    <span>MEDS</span>
+  </button>
+</div>
+
+<!-- VOICE / TEXT COMPOSER -->
+<div id="composer">
+  <div id="composer-parsed">
+    <div class="parsed-label" id="parsed-label">PARSED</div>
+    <div id="parsed-rows"></div>
+    <div class="parsed-actions">
+      <button class="pb discard" onclick="composerDiscard()">Discard</button>
+      <button class="pb save" onclick="composerSave()">Save to log</button>
+    </div>
+  </div>
+  <div id="composer-pill">
+    <input type="text" id="composer-input" placeholder="Tell me what to log…" oninput="composerOnInput()" onkeydown="composerOnKeydown(event)">
+    <button class="cbtn" id="composer-btn" onclick="composerAction()">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round"><path d="M12 2a3 3 0 0 1 3 3v7a3 3 0 0 1-6 0V5a3 3 0 0 1 3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/></svg>
+    </button>
+  </div>
+</div>
+
+<!-- TOAST -->
+<div id="toast"></div>
+
+<!-- ADD MED SHEET -->
+<div id="add-med-sheet">
+  <div id="add-med-backdrop" onclick="closeAddMed()"></div>
+  <div id="add-med-panel">
+    <div class="sgrab"></div>
+    <div class="shdr">
+      <button class="scancel" onclick="closeAddMed()">Cancel</button>
+      <div class="stitle">Add medication</div>
+      <button class="ssave" id="med-sheet-save-btn" onclick="saveMed()" disabled>Save</button>
+    </div>
+    <div class="sbody">
+      <div class="sfield"><div class="slabel">Name</div><input class="sinput" id="m-name" placeholder="e.g. Cetirizine" oninput="medNameInput()"></div>
+      <div class="sfield"><div class="slabel">Type</div><div class="type-grid" id="med-type-btns"></div></div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+        <div class="sfield"><div class="slabel">Dose</div><input class="sinput" id="m-dose" placeholder="10mg"></div>
+        <div class="sfield"><div class="slabel">Frequency</div>
+          <select class="sinput" id="m-freq" style="appearance:none;background-image:url(\"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'><path fill='%237A7F8C' d='M6 8L1 3h10z'/></svg>\");background-repeat:no-repeat;background-position:right 10px center;padding-right:28px">
+            <option>Once daily</option><option>Twice daily</option><option>Three times daily</option><option>As needed</option><option>Weekly</option><option>Other</option>
+          </select>
+        </div>
+      </div>
+      <div class="sfield"><div class="slabel">Time of day</div><div class="chips-wrap" id="med-time-chips"></div></div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+        <div class="sfield"><div class="slabel">Start date</div><input class="sinput" type="date" id="m-start"></div>
+        <div class="sfield"><div class="slabel">End date</div><input class="sinput" type="date" id="m-end"></div>
+      </div>
+      <div class="sfield"><div class="slabel">Notes</div><input class="sinput" id="m-notes" placeholder="e.g. take with food"></div>
+    </div>
+  </div>
+</div>
+
+<!-- DAY DETAIL SHEET -->
+<div id="day-sheet">
+  <div id="day-backdrop" onclick="closeDaySheet()"></div>
+  <div id="day-panel">
+    <div class="sgrab"></div>
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:18px">
+      <div style="flex:1;min-width:0">
+        <div class="dsec-title" id="day-focus-lbl" style="color:var(--hi)">DAY DETAIL</div>
+        <div style="font-size:20px;font-weight:700;color:var(--ink);letter-spacing:-.3px;margin-top:4px;line-height:1.15" id="day-date-lbl"></div>
+      </div>
+      <button onclick="closeDaySheet()" style="width:28px;height:28px;border-radius:999px;border:none;cursor:pointer;background:var(--surface);color:var(--ink3);display:flex;align-items:center;justify-content:center;flex-shrink:0">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
+      </button>
+    </div>
+    <div id="day-content"></div>
+  </div>
+</div>
+</div><!-- /app -->
+
+<script>
+// ── CONFIG ────────────────────────────────────────────────
+const AT_TOKEN = "__AT_TOKEN__";
+const OAI_KEY  = "__OAI_KEY__";
+const BASE     = "appqwgqTCHIvBd5EJ";
+const TBLS = {
+  bp:    "tbl8W1S2OztDe3vvs",
+  bw:    "tblrPIVx6kGVoNDCI",
+  hay:   "tblF5t8OVfXrAGxRB",
+  fit:   "tblrBn1YrSW7XzqxF",
+  wb:    "tbl0qnYJWaLCZhDBq",
+  med:   "tblsKegW3HTOXQmgY",
+  sleep: "tbl41Jv8y0IXO3VbD"
+};
+
+const HAY_SYMS = ['Sneezing','Runny nose','Itchy nose','Itchy eyes','Blocked nose','Itchy throat','Watery eyes','Headache'];
+const FIT_TYPES = ['Running','Cycling','Weights','Badminton','Hiking','Turbo','Circuits','Other'];
+const SLEEP_FLAGS = ['Too hot/cold','Needed to go to the loo','Went to the loo'];
+const SLEEP_LOCS  = ['Home','Flat','Away'];
+const MED_TYPES   = ['Prescription','Over-the-counter','Supplement','Vitamin'];
+const MED_TIMES   = ['Morning','Midday','Evening','Night','With food'];
+
+// ── STATE ─────────────────────────────────────────────────
+let data = {bp:[],bw:[],hay:[],fit:[],wb:[],sleep:[],med:[]};
+let curPage = 'today';
+let logTab = 'bp';
+let histRange = 30;
+let histFilter = 'all';
+let daySheetState = null;
+
+// Log form state
+const logS = {
+  bp:    {sys:'',dia:'',pulse:'',notes:''},
+  sleep: {quality:0,flags:[],location:'',autoLoc:'',notes:''},
+  bw:    {type:'',notes:''},
+  hay:   {sev:0,syms:[],notes:''},
+  fit:   {type:'',dur:'',intensity:0,notes:''},
+  wb:    {energy:0,notes:''}
+};
+
+// Add med state
+const medS = {name:'',type:'Supplement',dose:'',frequency:'Once daily',times:[],start:'',end:'',notes:''};
+
+// Composer state
+let cState = 'idle'; // idle | recording | parsing | parsed
+let cText = '';
+let cParsed = null;
+let mediaRec = null, audioChunks = [], isRecording = false, waveTimer = null;
+
+// ── HELPERS ───────────────────────────────────────────────
+const $ = id => document.getElementById(id);
+const pad = n => String(n).padStart(2,'0');
+
+function setSync(s) {
+  const d=$('sync-dot'),l=$('sync-label');
+  d.className='sync-dot'+(s==='ok'?' ok':s==='busy'?' busy':s==='err'?' err':'');
+  l.textContent=s==='busy'?'Syncing…':s==='ok'?'Synced':s==='err'?'Error':'—';
+}
+
+function toast(msg,dur=2200) {
+  const t=$('toast');t.textContent=msg;t.classList.add('show');
+  clearTimeout(t._t);t._t=setTimeout(()=>t.classList.remove('show'),dur);
+}
+
+function parseDate(d) {
+  if(!d) return null;
+  // Prevent UTC midnight → off-by-one-day bug for date-only strings
+  return typeof d==='string'&&d.length===10 ? new Date(d+'T00:00:00') : new Date(d);
+}
+function fmtDate(d) {
+  const dt=parseDate(d); if(!dt) return '—';
+  return dt.toLocaleDateString('en-GB',{weekday:'short',day:'numeric',month:'short',year:'numeric'}).toUpperCase();
+}
+function fmtDateShort(d) {
+  const dt=parseDate(d); if(!dt) return '—';
+  return dt.toLocaleDateString('en-GB',{day:'numeric',month:'short'});
+}
+function fmtTime(d) {
+  const dt=parseDate(d); if(!dt) return '';
+  return dt.toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'});
+}
+function fmtRel(d) {
+  if(!d) return '';
+  const diff = Date.now() - new Date(d);
+  if(diff < 5*60*1000) return 'just now';
+  if(diff < 60*60*1000) { const m=Math.floor(diff/60000); return m+'m ago'; }
+  if(diff < 24*60*60*1000) return 'today';
+  if(diff < 48*60*60*1000) return 'yesterday';
+  return fmtDateShort(d);
+}
+function localDateStr(d) {
+  if(!d) return '';
+  const dt = typeof d==='string'&&d.length===10 ? new Date(d+'T00:00:00') : new Date(d);
+  return dt.toISOString().slice(0,10);
+}
+function getGreeting() {
+  const h = new Date().getHours();
+  return h < 12 ? 'Good morning' : h < 17 ? 'Good afternoon' : 'Good evening';
+}
+
+// ── AIRTABLE ──────────────────────────────────────────────
+async function atFetch(path,opts={}) {
+  const ctrl=new AbortController();
+  const tid=setTimeout(()=>ctrl.abort(),15000);
+  try {
+    const r=await fetch(`https://api.airtable.com/v0/${path}`,{
+      ...opts,signal:ctrl.signal,
+      headers:{'Authorization':`Bearer ${AT_TOKEN}`,'Content-Type':'application/json',...(opts.headers||{})}
+    });
+    const d=await r.json();
+    if(!r.ok) throw new Error(d.error?.message||`HTTP ${r.status}`);
+    return d;
+  } finally { clearTimeout(tid); }
+}
+async function getAllRecords(tblId, sortField='Date') {
+  let recs=[],offset=null;
+  const sortQ=sortField?`&sort[0][field]=${encodeURIComponent(sortField)}&sort[0][direction]=desc`:'';
+  do {
+    const d = await atFetch(`${BASE}/${tblId}?pageSize=100${sortQ}${offset?'&offset='+offset:''}`);
+    if(d.records) recs=recs.concat(d.records);
+    offset=d.offset||null;
+  } while(offset);
+  return recs;
+}
+async function createRecord(tblId,fields) {
+  return atFetch(`${BASE}/${tblId}`,{method:'POST',body:JSON.stringify({records:[{fields}]})});
+}
+async function updateRecord(tblId,recordId,fields) {
+  return atFetch(`${BASE}/${tblId}/${recordId}`,{method:'PATCH',body:JSON.stringify({fields})});
+}
+
+// ── PIN ───────────────────────────────────────────────────
+let pinBuf='', pinMode='setup', pinFirst='';
+
+function initPin() {
+  const stored = localStorage.getItem('ht_pin');
+  if(!stored) {
+    pinMode='setup';
+    $('pin-mode-lbl').textContent='FIRST TIME SETUP';
+    $('pin-subtitle').textContent='Choose a 4-digit PIN to protect your data.';
+  } else if(localStorage.getItem('ht_ok')==='1') {
+    showApp(); return;
+  } else {
+    pinMode='enter';
+  }
+  updatePinDots();
+  document.addEventListener('keydown', pinKeydown);
+}
+function pinKeydown(e) {
+  if($('pin-screen').classList.contains('hidden')) {
+    document.removeEventListener('keydown', pinKeydown); return;
+  }
+  if(e.key>='0'&&e.key<='9') pinKey(e.key);
+  else if(e.key==='Backspace') pinDel();
+}
+function pinKey(d) {
+  if(pinBuf.length>=4) return;
+  pinBuf+=d; updatePinDots();
+  if(pinBuf.length===4) setTimeout(handlePin,150);
+}
+function pinDel() {
+  if(pinBuf.length>0){pinBuf=pinBuf.slice(0,-1); updatePinDots();}
+}
+function updatePinDots() {
+  for(let i=0;i<4;i++){
+    const d=$('pd'+i);
+    d.classList.toggle('filled',i<pinBuf.length);
+    d.classList.remove('error');
+  }
+}
+function handlePin() {
+  if(pinMode==='setup') {
+    pinFirst=pinBuf; pinBuf=''; pinMode='confirm';
+    $('pin-mode-lbl').textContent='CONFIRM PIN';
+    $('pin-subtitle').textContent='Enter your PIN again to confirm.';
+    updatePinDots();
+  } else if(pinMode==='confirm') {
+    if(pinBuf===pinFirst){localStorage.setItem('ht_pin',pinBuf);localStorage.setItem('ht_ok','1');showApp();}
+    else{pinErr("PINs don't match");pinMode='setup';pinFirst='';$('pin-mode-lbl').textContent='FIRST TIME SETUP';}
+  } else {
+    if(pinBuf===localStorage.getItem('ht_pin')){localStorage.setItem('ht_ok','1');showApp();}
+    else pinErr('Incorrect PIN');
+  }
+}
+function pinErr(msg) {
+  for(let i=0;i<4;i++) $('pd'+i).classList.add('error');
+  const dots=$('pin-dots');
+  dots.classList.add('shake');
+  const errmsg=$('pin-errmsg');
+  errmsg.textContent=msg||'Incorrect PIN';errmsg.classList.add('show');
+  setTimeout(()=>{dots.classList.remove('shake');pinBuf='';updatePinDots();errmsg.classList.remove('show');},1200);
+}
+function showApp() {
+  $('pin-screen').classList.add('hidden');
+  const app=$('app');app.style.display='flex';
+  initApp();
+}
+
+// ── APP INIT ──────────────────────────────────────────────
+function initApp() {
+  buildMedTypeGrid();
+  buildMedTimeChips();
+  loadToday();
+}
+
+// ── NAV ───────────────────────────────────────────────────
+function navTo(page, el) {
+  document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
+  document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'));
+  $('page-'+page).classList.add('active');
+  el.classList.add('active');
+  curPage=page;
+  if(page==='today')   loadToday();
+  if(page==='log')     renderLog();
+  if(page==='history') loadHistory();
+  if(page==='meds')    loadMeds();
+}
+
+// ── TODAY / DASHBOARD ─────────────────────────────────────
+async function loadToday() {
+  setSync('busy');
+  $('page-today').innerHTML = '<div style="padding:20px;font-size:13px;color:var(--ink3)">Loading…</div>';
+  try {
+    const [bpR,bwR,hayR,fitR,wbR,slpR,medR] = await Promise.all([
+      getAllRecords(TBLS.bp), getAllRecords(TBLS.bw), getAllRecords(TBLS.hay),
+      getAllRecords(TBLS.fit), getAllRecords(TBLS.wb),
+      TBLS.sleep !== 'tblSLEEP_TABLE_ID' ? getAllRecords(TBLS.sleep) : Promise.resolve([]),
+      getAllRecords(TBLS.med, '')
+    ]);
+    data.bp=bpR;data.bw=bwR;data.hay=hayR;data.fit=fitR;data.wb=wbR;data.sleep=slpR;
+    data.med=medR.filter(r=>r.fields.Name);
+    renderToday();
+    setSync('ok');
+  } catch(e) {
+    setSync('err');
+    $('page-today').innerHTML = '<div style="padding:20px;font-size:13px;color:var(--hi)">Failed to load data</div>';
+  }
+}
+
+function renderToday() {
+  const lastBP  = data.bp[0]?.fields || {};
+  const lastWB  = data.wb[0]?.fields || {};
+  const lastHay = data.hay[0]?.fields || {};
+  const lastSlp = data.sleep[0]?.fields || null;
+  const now     = new Date();
+  const today   = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}`;
+  const todayBW = data.bw.filter(r=>r.fields.Date&&r.fields.Date.slice(0,10)===today).length;
+  const bpSys   = lastBP.Systolic || 0;
+  const bpStatus = bpSys >= 140 ? {c:'var(--hi)',t:'Elevated'} : bpSys >= 130 ? {c:'var(--warn)',t:'Slightly high'} : {c:'var(--good)',t:'In range'};
+  const hay7avg  = data.hay.slice(0,7).reduce((s,r)=>s+(r.fields.Severity||0),0) / Math.max(1,Math.min(7,data.hay.length));
+  const wb7avg   = data.wb.slice(0,7).reduce((s,r)=>s+(r.fields.Energy||0),0) / Math.max(1,Math.min(7,data.wb.length));
+  const slp7avg  = data.sleep.slice(0,7).reduce((s,r)=>s+(r.fields.Quality||0),0) / Math.max(1,Math.min(7,data.sleep.length));
+  const activeMeds = (data.med||[]).filter(m=>m.fields.Active);
+
+  $('page-today').innerHTML = `
+  <div class="dash-day">${new Date().toLocaleDateString('en-GB',{weekday:'long',day:'numeric',month:'long'})}</div>
+  <div class="dash-greeting">${getGreeting()}, Dan</div>
+
+  <!-- BP HERO -->
+  <div class="card hero" style="margin-bottom:10px">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px">
+      <div>
+        <div class="clabel" style="margin-bottom:8px">Blood pressure</div>
+        <div style="display:flex;align-items:baseline">
+          <span class="bp-big">${bpSys||'—'}</span>
+          ${bpSys ? `<span class="bp-slash">/</span><span class="bp-dia">${lastBP.Diastolic||'—'}</span><span class="bp-unit">mmHg</span>` : ''}
+        </div>
+        ${bpSys ? `<div class="bp-status"><span class="sdot" style="background:${bpStatus.c}"></span><span style="color:${bpStatus.c}">${bpStatus.t}</span><span style="color:var(--ink3);font-weight:400;margin-left:4px">· ♥ ${lastBP.Pulse||'—'} bpm</span></div>` : ''}
+      </div>
+      <div class="bp-meta">
+        <div class="bp-meta-day">${fmtRel(data.bp[0]?.fields?.Date)}</div>
+        <div class="bp-meta-count">${data.bp.length} readings</div>
+      </div>
+    </div>
+    ${renderBPChart(data.bp)}
+  </div>
+
+  <!-- SLEEP -->
+  ${lastSlp ? `
+  <div class="card" style="margin-bottom:10px">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px">
+      <div>
+        <div class="clabel" style="color:var(--sleep);margin-bottom:6px">Sleep</div>
+        <div style="display:flex;align-items:baseline;gap:4px">
+          <span style="font-size:28px;font-weight:700;color:var(--ink);line-height:1">${lastSlp.Quality||'—'}</span>
+          <span style="font-size:13px;color:var(--ink4)">/5 quality</span>
+        </div>
+        <div style="font-size:11px;color:var(--ink3);margin-top:4px;display:flex;align-items:center;gap:4px">
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="var(--sleep)" stroke-width="2" stroke-linecap="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
+          ${lastSlp.Location||'—'} · ${fmtRel(data.sleep[0]?.fields?.Date)}
+        </div>
+      </div>
+      <div style="text-align:right">
+        <div style="font-size:10px;color:var(--ink3)">7-day avg</div>
+        <div style="font-size:20px;font-weight:600;color:var(--ink)">${slp7avg.toFixed(1)}</div>
+      </div>
+    </div>
+    ${renderSleepBars(data.sleep)}
+    ${(lastSlp.Flags&&lastSlp.Flags.length) ? `<div style="display:flex;gap:5px;margin-top:8px;flex-wrap:wrap">${lastSlp.Flags.map(f=>`<span style="font-size:10px;padding:2px 8px;border-radius:999px;background:rgba(110,91,216,.1);color:var(--sleep);font-weight:500">${f}</span>`).join('')}</div>` : ''}
+  </div>
+  ` : ''}
+
+  <!-- HAY + ENERGY TILES -->
+  <div class="tile-grid">
+    <div class="card" style="margin-bottom:0;min-width:0;padding:14px">
+      <div class="tile-hdr">
+        <div class="clabel">Hay fever</div>
+        <div class="tile-avg"><div class="tile-avg-lbl">7-day avg</div><div class="tile-avg-num">${hay7avg.toFixed(1)}</div></div>
+      </div>
+      <div style="display:flex;align-items:baseline;gap:4px">
+        <span class="tile-big">${lastHay.Severity||'—'}</span>
+        ${lastHay.Severity?'<span class="tile-unit">/5</span>':''}
+      </div>
+      ${renderMiniBars(data.hay,'hay')}
+    </div>
+    <div class="card" style="margin-bottom:0;min-width:0;padding:14px">
+      <div class="tile-hdr">
+        <div class="clabel">Energy</div>
+        <div class="tile-avg"><div class="tile-avg-lbl">7-day avg</div><div class="tile-avg-num">${wb7avg.toFixed(1)}</div></div>
+      </div>
+      <div style="display:flex;align-items:baseline;gap:4px">
+        <span class="tile-big">${lastWB.Energy||'—'}</span>
+        ${lastWB.Energy?'<span class="tile-unit">/5</span>':''}
+      </div>
+      ${renderMiniBars(data.wb,'wb')}
+    </div>
+  </div>
+
+  <!-- BOWEL CALENDAR -->
+  <div class="card" style="margin-bottom:10px">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+      <div class="clabel">Bowel regularity</div>
+      <div style="font-size:11px;color:var(--ink2);font-weight:600">${todayBW} today</div>
+    </div>
+    ${renderBowelHeatmap(data.bw)}
+  </div>
+
+  <!-- ACTIVE MEDS -->
+  ${activeMeds.length ? `
+  <div class="card" style="margin-bottom:10px">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+      <div class="clabel">Active medications</div>
+      <div style="font-size:11px;color:var(--accent);font-weight:600">${activeMeds.length}</div>
+    </div>
+    <div style="max-height:200px;overflow-y:auto;-webkit-overflow-scrolling:touch">
+    ${activeMeds.map(m=>`
+    <div class="dash-med-row">
+      <div>
+        <div style="font-size:13px;font-weight:600;color:var(--ink)">${m.fields.Name}</div>
+        <div style="font-size:11px;color:var(--ink3)">${m.fields.Dose||''} · ${m.fields.Frequency||''}</div>
+      </div>
+      <div style="font-size:11px;color:var(--ink3);align-self:center">${(Array.isArray(m.fields['Time of Day'])?m.fields['Time of Day']:[]).join(' · ')}</div>
+    </div>`).join('')}
+    </div>
+  </div>` : ''}
+  `;
+
+  // Scroll charts to right after render
+  setTimeout(()=>{
+    ['bp-chart-scroll','hay-bars-wrap','wb-bars-wrap','slp-bars-wrap','bowel-scroll'].forEach(id=>{
+      const el=$(id);if(el) el.scrollLeft=el.scrollWidth;
+    });
+  },80);
+
+  // Wire bowel cell clicks
+  document.querySelectorAll('.bowel-cell').forEach(cell=>{
+    cell.addEventListener('click',()=>{
+      const key=cell.dataset.key;
+      openDaySheet({type:'bw',dateKey:key});
+    });
+  });
+
+  // Wire mini bar clicks
+  document.querySelectorAll('[data-daykey]').forEach(bar=>{
+    bar.addEventListener('click',()=>{
+      openDaySheet({type:bar.dataset.type,dateKey:bar.dataset.daykey});
+    });
+  });
+}
+
+function renderBPChart(recs,idSuffix='',days=30) {
+  const gId='sysG'+idSuffix;
+  const {start,end}=chartRange(days);
+  const arr=recs.filter(r=>{const d=parseDate(r.fields.Date);return d&&d>=start&&d<=end;})
+    .sort((a,b)=>parseDate(a.fields.Date)-parseDate(b.fields.Date));
+  if(!arr.length) return '<div style="height:80px;display:flex;align-items:center;justify-content:center;font-size:12px;color:var(--ink4)">No readings in this period</div>';
+  const H=168,P=10,BOT=32,VW=360;
+  const xs=arr.map(r=>xPos(r.fields.Date,start,end,P,VW));
+  const sY=v=>H-BOT-((v-60)/100)*(H-P-BOT);
+  const dY=v=>H-BOT-((v-60)/100)*(H-P-BOT);
+  const pY=v=>H-BOT-((v-40)/80)*(H-P-BOT);
+  const sp=arr.map((r,i)=>`${i===0?'M':'L'}${xs[i].toFixed(1)},${sY(r.fields.Systolic||120).toFixed(1)}`).join(' ');
+  const dp=arr.map((r,i)=>`${i===0?'M':'L'}${xs[i].toFixed(1)},${dY(r.fields.Diastolic||80).toFixed(1)}`).join(' ');
+  const pp=arr.map((r,i)=>`${i===0?'M':'L'}${xs[i].toFixed(1)},${pY(r.fields.Pulse||65).toFixed(1)}`).join(' ');
+  const sa=sp+` L${xs[xs.length-1].toFixed(1)},${H-BOT} L${xs[0].toFixed(1)},${H-BOT} Z`;
+  const last=arr[arr.length-1].fields;
+  return `<div style="margin:4px -2px 0">
+  <svg width="100%" height="${H}" viewBox="0 0 ${VW} ${H}" preserveAspectRatio="none" style="display:block;overflow:visible">
+    <defs><linearGradient id="${gId}" x1="0" x2="0" y1="0" y2="1"><stop offset="0%" stop-color="#1E4FE8" stop-opacity=".18"/><stop offset="100%" stop-color="#1E4FE8" stop-opacity="0"/></linearGradient></defs>
+    <rect x="${P}" y="${sY(130).toFixed(1)}" width="${VW-2*P}" height="${(sY(110)-sY(130)).toFixed(1)}" fill="#0FA968" opacity=".06"/>
+    <line x1="${P}" x2="${VW-P}" y1="${sY(120).toFixed(1)}" y2="${sY(120).toFixed(1)}" stroke="#0FA968" stroke-opacity=".25" stroke-dasharray="3 3" stroke-width="1"/>
+    <path d="${sa}" fill="url(#${gId})"/>
+    <path d="${sp}" stroke="#1E4FE8" stroke-width="2.2" fill="none" stroke-linejoin="round" stroke-linecap="round"/>
+    <path d="${dp}" stroke="#D946A1" stroke-width="2.2" fill="none" stroke-dasharray="4 3" stroke-linejoin="round"/>
+    <path d="${pp}" stroke="#E78A1F" stroke-width="1.6" fill="none" stroke-linejoin="round" stroke-linecap="round" opacity=".85"/>
+    <circle cx="${xs[xs.length-1].toFixed(1)}" cy="${sY(last.Systolic||120).toFixed(1)}" r="4" fill="#1E4FE8" stroke="#fff" stroke-width="2"/>
+    <circle cx="${xs[xs.length-1].toFixed(1)}" cy="${dY(last.Diastolic||80).toFixed(1)}" r="3" fill="#D946A1" stroke="#fff" stroke-width="1.5"/>
+    <circle cx="${xs[xs.length-1].toFixed(1)}" cy="${pY(last.Pulse||65).toFixed(1)}" r="2.5" fill="#E78A1F" stroke="#fff" stroke-width="1.5"/>
+    <line x1="${P}" x2="${VW-P}" y1="${H-BOT+3}" y2="${H-BOT+3}" stroke="#E8EAEF" stroke-width="1"/>
+    ${axisTicksSVG(start,end,H,BOT,P,VW)}
+  </svg></div>`;
+}
+
+function renderSleepBars(recs) {
+  const arr=[...recs].reverse();
+  if(!arr.length) return '';
+  const bars=arr.map(r=>{
+    const q=r.fields.Quality||1;
+    const h=15+q*17;
+    const bg=q>=4?'#6E5BD8':q>=3?'#9B8DE6':'#C7BEEF';
+    const key=r.fields.Date?.slice(0,10)||'';
+    return `<button data-type="sleep" data-daykey="${key}" style="width:12px;flex-shrink:0;height:${h}%;background:${bg};border-radius:2px 2px 0 0;border:none;cursor:pointer" title="${fmtDateShort(r.fields.Date)} · ${q}/5"></button>`;
+  }).join('');
+  return `<div class="bars-wrap" id="slp-bars-wrap" style="height:36px"><div class="bars-inner" style="height:100%;align-items:flex-end">${bars}</div></div>`;
+}
+
+function renderMiniBars(recs, type) {
+  const arr=[...recs].reverse();
+  if(!arr.length) return '';
+  const bars=arr.map(r=>{
+    const v=type==='hay'?(r.fields.Severity||0):(r.fields.Energy||0);
+    const h=v*20;const key=r.fields.Date?.slice(0,10)||'';
+    const bg=type==='hay'?`rgba(216,65,58,${0.15+v*0.15})`:`rgba(30,79,232,0.6)`;
+    return `<button data-type="${type}" data-daykey="${key}" style="width:12px;flex-shrink:0;height:${h}%;min-height:4px;background:${bg};border-radius:2px;border:none;cursor:pointer" title="${fmtDateShort(r.fields.Date)} · ${v}/5"></button>`;
+  }).join('');
+  const wrapId=type==='hay'?'hay-bars-wrap':'wb-bars-wrap';
+  return `<div class="bars-wrap" id="${wrapId}" style="height:22px"><div class="bars-inner" style="height:100%;align-items:flex-end">${bars}</div></div>`;
+}
+
+function renderBowelHeatmap(recs,scrollId='bowel-scroll',days=60) {
+  const byDay={};
+  recs.forEach(r=>{const k=r.fields.Date?.slice(0,10);if(k){if(!byDay[k])byDay[k]=[];byDay[k].push(r);}});
+  const today=new Date();
+  const items=[];
+  for(let i=days-1;i>=0;i--){
+    const d=new Date(today);d.setDate(d.getDate()-i);
+    const key=`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+    const entries=byDay[key]||[];
+    const count=entries.length;
+    items.push(`<div style="font-size:8px;font-weight:600;color:var(--ink3);text-align:center;line-height:1.2">${d.getDate()}</div>`);
+    const regBg=count===0?'var(--line)':count===1?'#B8D1FF':count===2?'#5C8DFA':'var(--accent)';
+    items.push(`<button class="bowel-cell" data-key="${key}" style="background:${regBg}" onclick="openDaySheet({type:'bw',dateKey:'${key}'})" title="${key}: ${count} entr${count===1?'y':'ies'}"></button>`);
+    // Consistency: highest Bristol type for the day
+    const nums=entries.map(r=>{const m=(r.fields.Consistency||'').match(/Type (\d+)/);return m?parseInt(m[1]):null;}).filter(n=>n!==null);
+    let consBg='var(--line)',consNum='',consCol='transparent';
+    if(nums.length){const hi=Math.max(...nums);consBg=hi<=2?'#C47A3C':hi<=4?'#0FA968':hi<=6?'#E78A1F':'#D8413A';consNum=String(hi);consCol='#fff';}
+    items.push(`<div style="border-radius:3px;background:${consBg};width:100%;height:100%;display:flex;align-items:center;justify-content:center;font-size:8px;font-weight:700;color:${consCol}">${consNum}</div>`);
+  }
+  const legend=`<div class="bowel-legend" style="flex-direction:column;gap:5px;margin-top:8px">
+    <div style="display:flex;gap:10px;align-items:center"><span style="font-size:9px;font-weight:600;color:var(--ink3);text-transform:uppercase;letter-spacing:.3px;min-width:72px">Frequency</span><span><span class="legend-dot" style="background:var(--line)"></span>None</span><span><span class="legend-dot" style="background:#B8D1FF"></span>1×</span><span><span class="legend-dot" style="background:#5C8DFA"></span>2×</span><span><span class="legend-dot" style="background:var(--accent)"></span>3+×</span></div>
+    <div style="display:flex;gap:10px;align-items:center"><span style="font-size:9px;font-weight:600;color:var(--ink3);text-transform:uppercase;letter-spacing:.3px;min-width:72px">Consistency</span><span><span class="legend-dot" style="background:#C47A3C"></span>Hard</span><span><span class="legend-dot" style="background:#0FA968"></span>Normal</span><span><span class="legend-dot" style="background:#E78A1F"></span>Loose</span><span><span class="legend-dot" style="background:#D8413A"></span>Urgent</span></div>
+  </div>`;
+  return `<div class="bowel-wrap" id="${scrollId}"><div style="display:grid;grid-template-rows:12px 18px 18px;grid-auto-flow:column;grid-auto-columns:20px;gap:2px 3px;width:max-content;align-items:start">${items.join('')}</div></div>${legend}`;
+}
+
+// ── DATE-RANGE CHART HELPERS ─────────────────────────────
+function chartRange(days) {
+  const end=new Date();end.setHours(23,59,59,999);
+  const start=new Date(end);start.setDate(start.getDate()-days+1);start.setHours(0,0,0,0);
+  return {start,end};
+}
+function xPos(dateVal,start,end,P,VW) {
+  const d=typeof dateVal==='string'?parseDate(dateVal):dateVal;
+  if(!d) return P;
+  return P+Math.max(0,Math.min(1,(d-start)/(end-start)))*(VW-2*P);
+}
+function ddmm(d) {
+  const dt=typeof d==='string'?parseDate(d):d;
+  return dt?`${String(dt.getDate()).padStart(2,'0')}/${String(dt.getMonth()+1).padStart(2,'0')}`:'' ;
+}
+function axisTicksSVG(start,end,H,BOT,P,VW) {
+  const mid=new Date((start.getTime()+end.getTime())/2);
+  return [
+    {d:start,anchor:'start'},{d:mid,anchor:'middle'},{d:end,anchor:'end'}
+  ].map(t=>{
+    const x=xPos(t.d,start,end,P,VW);
+    return `<line x1="${x.toFixed(1)}" x2="${x.toFixed(1)}" y1="${H-BOT+3}" y2="${H-BOT+7}" stroke="#B8BCC6" stroke-width="1"/>
+    <text x="${x.toFixed(1)}" y="${H-BOT+20}" font-family="Inter,system-ui,sans-serif" font-size="10" fill="#7A7F8C" text-anchor="${t.anchor}">${ddmm(t.d)}</text>`;
+  }).join('');
+}
+
+function renderSleepChart(recs,days=30) {
+  const {start,end}=chartRange(days);
+  const arr=recs.filter(r=>{const d=parseDate(r.fields.Date);return d&&d>=start&&d<=end;})
+    .sort((a,b)=>parseDate(a.fields.Date)-parseDate(b.fields.Date));
+  if(!arr.length) return '<div style="height:80px;display:flex;align-items:center;justify-content:center;font-size:12px;color:var(--ink4)">No sleep data in this period</div>';
+  const H=100,P=10,BOT=28,VW=360;
+  const barW=Math.max(4,Math.min(16,(VW-2*P)/days*0.7));
+  const bars=arr.map(r=>{
+    const q=r.fields.Quality||1;const bH=(15+q*17)/100*(H-P-BOT);
+    const bg=q>=4?'#6E5BD8':q>=3?'#9B8DE6':'#C7BEEF';
+    const x=xPos(r.fields.Date,start,end,P,VW);
+    return `<rect x="${(x-barW/2).toFixed(1)}" y="${(H-BOT-bH).toFixed(1)}" width="${barW.toFixed(1)}" height="${bH.toFixed(1)}" fill="${bg}" rx="2"/>`;
+  }).join('');
+  return `<div style="margin:4px -2px 0"><svg width="100%" height="${H}" viewBox="0 0 ${VW} ${H}" preserveAspectRatio="none" style="display:block;overflow:visible">${bars}<line x1="${P}" x2="${VW-P}" y1="${H-BOT+3}" y2="${H-BOT+3}" stroke="#E8EAEF" stroke-width="1"/>${axisTicksSVG(start,end,H,BOT,P,VW)}</svg></div>`;
+}
+
+function renderHayChart(recs,days=30) {
+  const {start,end}=chartRange(days);
+  const arr=recs.filter(r=>{const d=parseDate(r.fields.Date);return d&&d>=start&&d<=end;})
+    .sort((a,b)=>parseDate(a.fields.Date)-parseDate(b.fields.Date));
+  if(!arr.length) return '<div style="height:80px;display:flex;align-items:center;justify-content:center;font-size:12px;color:var(--ink4)">No hay fever data in this period</div>';
+  const H=120,P=10,BOT=32,VW=360;
+  const barW=Math.max(4,Math.min(18,(VW-2*P)/days*0.7));
+  const bars=arr.map(r=>{
+    const v=r.fields.Severity||1;const bH=(v/5)*(H-P-BOT);const op=(0.25+v*0.15).toFixed(2);
+    const x=xPos(r.fields.Date,start,end,P,VW);
+    return `<rect x="${(x-barW/2).toFixed(1)}" y="${(H-BOT-bH).toFixed(1)}" width="${barW.toFixed(1)}" height="${bH.toFixed(1)}" fill="#D8413A" opacity="${op}" rx="2"/>`;
+  }).join('');
+  return `<div style="margin:4px -2px 0"><svg width="100%" height="${H}" viewBox="0 0 ${VW} ${H}" preserveAspectRatio="none" style="display:block;overflow:visible">${bars}<line x1="${P}" x2="${VW-P}" y1="${H-BOT+3}" y2="${H-BOT+3}" stroke="#E8EAEF" stroke-width="1"/>${axisTicksSVG(start,end,H,BOT,P,VW)}</svg></div>`;
+}
+
+function renderFitnessChart(recs,days=30) {
+  const {start,end}=chartRange(days);
+  const byDay={};
+  recs.filter(r=>{const d=parseDate(r.fields.Date);return d&&d>=start&&d<=end;})
+    .forEach(r=>{const k=r.fields.Date?.slice(0,10);if(!k)return;if(!byDay[k])byDay[k]={mins:0,intensities:[]};byDay[k].mins+=(r.fields['Duration (mins)']||0);if(r.fields.Intensity)byDay[k].intensities.push(r.fields.Intensity);});
+  const arr=Object.keys(byDay).sort().map(k=>({date:k,mins:byDay[k].mins,intensity:byDay[k].intensities.length?byDay[k].intensities.reduce((a,b)=>a+b,0)/byDay[k].intensities.length:null}));
+  if(!arr.length) return '<div style="height:80px;display:flex;align-items:center;justify-content:center;font-size:12px;color:var(--ink4)">No fitness data in this period</div>';
+  const H=140,P=10,BOT=32,VW=360;
+  const maxMins=Math.max(...arr.map(a=>a.mins),1);
+  const barW=Math.max(4,Math.min(18,(VW-2*P)/days*0.7));
+  const iY=v=>H-BOT-((v-1)/4)*(H-P-BOT);
+  const bars=arr.map(d=>{const bH=(d.mins/maxMins)*(H-P-BOT);const x=xPos(d.date,start,end,P,VW);return `<rect x="${(x-barW/2).toFixed(1)}" y="${(H-BOT-bH).toFixed(1)}" width="${barW.toFixed(1)}" height="${bH.toFixed(1)}" fill="#0FA968" opacity=".3" rx="2"/>`;}).join('');
+  let intPath='',lastIntX=null,lastIntY=null;
+  arr.forEach((d,i)=>{if(d.intensity===null)return;const x=xPos(d.date,start,end,P,VW);const y=iY(d.intensity);const pt=`${x.toFixed(1)},${y.toFixed(1)}`;intPath+=(i===0||arr[i-1].intensity===null?'M':'L')+pt;lastIntX=x;lastIntY=y;});
+  return `<div style="margin:4px -2px 0">
+    <svg width="100%" height="${H}" viewBox="0 0 ${VW} ${H}" preserveAspectRatio="none" style="display:block;overflow:visible">
+      ${bars}
+      ${intPath?`<path d="${intPath}" stroke="#0FA968" stroke-width="2.2" fill="none" stroke-linejoin="round" stroke-linecap="round"/>`:''}
+      ${lastIntX!==null?`<circle cx="${lastIntX.toFixed(1)}" cy="${lastIntY.toFixed(1)}" r="4" fill="#0FA968" stroke="#fff" stroke-width="2"/>`:''}
+      <line x1="${P}" x2="${VW-P}" y1="${H-BOT+3}" y2="${H-BOT+3}" stroke="#E8EAEF" stroke-width="1"/>
+      ${axisTicksSVG(start,end,H,BOT,P,VW)}
+    </svg>
+    <div style="display:flex;gap:14px;margin-top:5px;font-size:10px;color:var(--ink3)">
+      <span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:#0FA968;opacity:.35;margin-right:4px;vertical-align:middle"></span>Minutes</span>
+      <span><span style="display:inline-block;width:16px;height:2px;background:#0FA968;margin-right:4px;vertical-align:middle;border-radius:1px;margin-bottom:1px"></span>Avg intensity</span>
+    </div>
+  </div>`;
+}
+
+function renderEnergyChart(recs,days=30) {
+  const {start,end}=chartRange(days);
+  const arr=recs.filter(r=>{const d=parseDate(r.fields.Date);return d&&d>=start&&d<=end;})
+    .sort((a,b)=>parseDate(a.fields.Date)-parseDate(b.fields.Date));
+  if(!arr.length) return '<div style="height:80px;display:flex;align-items:center;justify-content:center;font-size:12px;color:var(--ink4)">No energy data in this period</div>';
+  const H=120,P=10,BOT=32,VW=360;
+  const eY=v=>H-BOT-((v-1)/4)*(H-P-BOT);
+  const xs=arr.map(r=>xPos(r.fields.Date,start,end,P,VW));
+  const path=arr.map((r,i)=>`${i===0?'M':'L'}${xs[i].toFixed(1)},${eY(r.fields.Energy||3).toFixed(1)}`).join(' ');
+  const fill=path+` L${xs[xs.length-1].toFixed(1)},${H-BOT} L${xs[0].toFixed(1)},${H-BOT} Z`;
+  const last=arr[arr.length-1];
+  return `<div style="margin:4px -2px 0"><svg width="100%" height="${H}" viewBox="0 0 ${VW} ${H}" preserveAspectRatio="none" style="display:block;overflow:visible"><defs><linearGradient id="eneG" x1="0" x2="0" y1="0" y2="1"><stop offset="0%" stop-color="#D946A1" stop-opacity=".18"/><stop offset="100%" stop-color="#D946A1" stop-opacity="0"/></linearGradient></defs><path d="${fill}" fill="url(#eneG)"/><path d="${path}" stroke="#D946A1" stroke-width="2.2" fill="none" stroke-linejoin="round" stroke-linecap="round"/><circle cx="${xs[xs.length-1].toFixed(1)}" cy="${eY(last.fields.Energy||3).toFixed(1)}" r="4" fill="#D946A1" stroke="#fff" stroke-width="2"/><line x1="${P}" x2="${VW-P}" y1="${H-BOT+3}" y2="${H-BOT+3}" stroke="#E8EAEF" stroke-width="1"/>${axisTicksSVG(start,end,H,BOT,P,VW)}</svg></div>`;
+}
+
+// ── LOG PAGE ──────────────────────────────────────────────
+function renderLog() {
+  $('page-log').innerHTML = `
+  <div class="log-title">Log entry</div>
+  <div class="log-tabs" id="log-tabs">
+    ${[['bp','BP'],['sleep','Sleep'],['bw','Bowels'],['hay','Hay fever'],['fit','Fitness'],['wb','Energy']].map(([id,lbl])=>
+      `<button class="log-tab${logTab===id?' active':''}" onclick="switchLogTab('${id}')">${lbl}</button>`
+    ).join('')}
+  </div>
+  <div id="log-form"></div>`;
+  renderLogForm();
+}
+
+function switchLogTab(tab) {
+  logTab=tab;
+  const tabIds=['bp','sleep','bw','hay','fit','wb'];
+  document.querySelectorAll('#log-tabs .log-tab').forEach((t,i)=>{
+    t.classList.toggle('active',tabIds[i]===tab);
+  });
+  renderLogForm();
+  if(tab==='sleep') startGeoLoc();
+}
+
+function renderLogForm() {
+  const el=$('log-form');
+  if(!el) return;
+  let html='';
+  if(logTab==='bp') {
+    html=`
+    <div class="lfield"><div class="llabel">Reading</div>
+      <div class="g3">
+        <input class="linput center" type="number" id="log-sys" placeholder="120" value="${logS.bp.sys}" oninput="logS.bp.sys=this.value">
+        <input class="linput center" type="number" id="log-dia" placeholder="80" value="${logS.bp.dia}" oninput="logS.bp.dia=this.value">
+        <input class="linput center" type="number" id="log-pulse" placeholder="72" value="${logS.bp.pulse}" oninput="logS.bp.pulse=this.value">
+      </div>
+      <div class="g3-sub"><span>SYSTOLIC</span><span>DIASTOLIC</span><span>PULSE</span></div>
+    </div>
+    <div class="lfield"><div class="llabel">Notes</div><input class="linput" id="log-bp-notes" placeholder="optional…" value="${logS.bp.notes}" oninput="logS.bp.notes=this.value"></div>
+    <button class="btn-save" onclick="saveLogEntry('bp')">Save entry</button>`;
+  } else if(logTab==='sleep') {
+    html=`
+    <div class="lfield"><div class="llabel">How well did you sleep?</div>
+      <div class="scale-row">${[1,2,3,4,5].map(n=>`<button class="sbtn${logS.sleep.quality===n?' active':''}" onclick="setScale('sleep','quality',${n})">${n}</button>`).join('')}</div>
+      <div class="scale-caps"><span>Awful</span><span>Restorative</span></div>
+    </div>
+    <div class="lfield"><div class="llabel">During the night</div>
+      <div class="check-list">${SLEEP_FLAGS.map(f=>`
+      <button class="check-row${logS.sleep.flags.includes(f)?' active':''}" onclick="toggleFlag('sleep','flags','${f}')">
+        <span class="cbox">${logS.sleep.flags.includes(f)?`<svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round"><polyline points="2,6 5,9 10,3"/></svg>`:''}</span>
+        <span>${f}</span>
+      </button>`).join('')}</div>
+    </div>
+    <div class="lfield"><div class="llabel">Where did you sleep?</div>
+      <div class="loc-grid">${SLEEP_LOCS.map(l=>`
+      <button class="locbtn${logS.sleep.location===l?' active':''}" onclick="setSleepLoc('${l}')">
+        ${l}${logS.sleep.autoLoc===l?'<span class="auto-badge">AUTO</span>':''}
+      </button>`).join('')}</div>
+      <div class="loc-helper">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" style="flex-shrink:0"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
+        <span id="geo-status">${logS.sleep.autoLoc?`From device location: <strong>${logS.sleep.autoLoc}</strong>`:'Detecting location…'}</span>
+      </div>
+    </div>
+    <div class="lfield"><div class="llabel">Notes</div><input class="linput" id="log-sleep-notes" placeholder="dreams, wake-ups, anything else…" value="${logS.sleep.notes}" oninput="logS.sleep.notes=this.value"></div>
+    <button class="btn-save" onclick="saveLogEntry('sleep')">Save entry</button>`;
+  } else if(logTab==='bw') {
+    html=`
+    <div class="lfield"><div class="llabel">Consistency (Bristol scale)</div>
+      <div class="bristol-list">${[1,2,3,4,5,6,7,8].map(n=>{
+        const lbl=['Hard lumps','Lumpy sausage','Cracked sausage','Smooth sausage (ideal)','Soft blobs','Fluffy pieces','Watery','Urgent'][n-1];
+        const val=`Type ${n} - ${lbl}`;
+        return `<button class="brow${logS.bw.type===val?' active':''}" onclick="setLogVal('bw','type','${val}')">
+          <span class="bcode${n===8?' danger':''}">T${n}</span>${lbl}
+        </button>`;
+      }).join('')}</div>
+    </div>
+    <div class="lfield"><div class="llabel">Notes</div><input class="linput" id="log-bw-notes" placeholder="context, timing, anything else…" value="${logS.bw.notes}" oninput="logS.bw.notes=this.value"></div>
+    <button class="btn-save" onclick="saveLogEntry('bw')">Save entry</button>`;
+  } else if(logTab==='hay') {
+    html=`
+    <div class="lfield"><div class="llabel">Severity</div>
+      <div class="scale-row">${[1,2,3,4,5].map(n=>`<button class="sbtn${logS.hay.sev===n?' active':''}" onclick="setScale('hay','sev',${n})">${n}</button>`).join('')}</div>
+    </div>
+    <div class="lfield"><div class="llabel">Symptoms</div>
+      <div class="chips-wrap">${HAY_SYMS.map(s=>`<button class="chip${logS.hay.syms.includes(s)?' active':''}" onclick="toggleSym('hay','syms','${s}')">${s}</button>`).join('')}</div>
+    </div>
+    <div class="lfield"><div class="llabel">Notes</div><input class="linput" id="log-hay-notes" placeholder="triggers, location, anything else…" value="${logS.hay.notes}" oninput="logS.hay.notes=this.value"></div>
+    <button class="btn-save" onclick="saveLogEntry('hay')">Save entry</button>`;
+  } else if(logTab==='fit') {
+    html=`
+    <div class="lfield"><div class="llabel">Type</div>
+      <div class="fit-grid">${FIT_TYPES.map(t=>`<button class="fitbtn${logS.fit.type===t?' active':''}" onclick="setLogVal('fit','type','${t}')">${t}</button>`).join('')}</div>
+    </div>
+    <div class="lfield"><div class="llabel">Duration · minutes</div><input class="linput" type="number" id="log-fit-dur" placeholder="30" value="${logS.fit.dur}" oninput="logS.fit.dur=this.value"></div>
+    <div class="lfield"><div class="llabel">Intensity</div>
+      <div class="scale-row">${[1,2,3,4,5].map(n=>`<button class="sbtn${logS.fit.intensity===n?' active':''}" onclick="setScale('fit','intensity',${n})">${n}</button>`).join('')}</div>
+    </div>
+    <div class="lfield"><div class="llabel">Notes</div><input class="linput" id="log-fit-notes" placeholder="how did it feel?" value="${logS.fit.notes}" oninput="logS.fit.notes=this.value"></div>
+    <button class="btn-save" onclick="saveLogEntry('fit')">Save entry</button>`;
+  } else if(logTab==='wb') {
+    html=`
+    <div class="lfield"><div class="llabel">How is your energy?</div>
+      <div class="scale-row">${[1,2,3,4,5].map(n=>`<button class="sbtn${logS.wb.energy===n?' active':''}" onclick="setScale('wb','energy',${n})">${n}</button>`).join('')}</div>
+      <div class="scale-caps"><span>Drained</span><span>Excellent</span></div>
+    </div>
+    <div class="lfield"><div class="llabel">Notes</div><input class="linput" id="log-wb-notes" placeholder="how are you feeling?" value="${logS.wb.notes}" oninput="logS.wb.notes=this.value"></div>
+    <button class="btn-save" onclick="saveLogEntry('wb')">Save entry</button>`;
+  }
+  el.innerHTML=html;
+}
+
+// Log form helpers
+function setScale(section,key,val) {
+  logS[section][key]=val; renderLogForm();
+}
+function setLogVal(section,key,val) {
+  logS[section][key]=val; renderLogForm();
+}
+function toggleFlag(section,key,val) {
+  const arr=logS[section][key];
+  const idx=arr.indexOf(val);
+  idx>-1?arr.splice(idx,1):arr.push(val);
+  renderLogForm();
+}
+function toggleSym(section,key,val) { toggleFlag(section,key,val); }
+function setSleepLoc(loc) { logS.sleep.location=loc; renderLogForm(); }
+
+function startGeoLoc() {
+  if(logS.sleep.autoLoc) return;
+  if(!navigator.geolocation) { logS.sleep.autoLoc='Home'; renderLogForm(); return; }
+  navigator.geolocation.getCurrentPosition(
+    ()=>{logS.sleep.autoLoc='Home';if(!logS.sleep.location) logS.sleep.location='Home';renderLogForm();},
+    ()=>{logS.sleep.autoLoc='Home';if(!logS.sleep.location) logS.sleep.location='Home';renderLogForm();},
+    {timeout:3000}
+  );
+}
+
+// ── SAVE ──────────────────────────────────────────────────
+async function saveLogEntry(sec) {
+  const btn=document.querySelector('#log-form .btn-save');
+  if(btn){btn.disabled=true;btn.textContent='Saving…';}
+  const now=new Date().toISOString();
+  try {
+    let fields={},res;
+    if(sec==='bp') {
+      if(!logS.bp.sys){toast('Enter systolic BP');btn&&(btn.disabled=false,btn.textContent='Save entry');return;}
+      fields={Date:now,Systolic:parseInt(logS.bp.sys)};
+      if(logS.bp.dia) fields.Diastolic=parseInt(logS.bp.dia);
+      if(logS.bp.pulse) fields.Pulse=parseInt(logS.bp.pulse);
+      if(logS.bp.notes) fields.Notes=logS.bp.notes;
+      res=await createRecord(TBLS.bp,fields);
+      if(res.records){toast('BP saved ✓');logS.bp={sys:'',dia:'',pulse:'',notes:''};}
+    } else if(sec==='sleep') {
+      if(TBLS.sleep==='tblSLEEP_TABLE_ID'){toast('Sleep table not configured yet');btn&&(btn.disabled=false,btn.textContent='Save entry');return;}
+      fields={Date:now};
+      if(logS.sleep.quality) fields.Quality=logS.sleep.quality;
+      if(logS.sleep.flags.length) fields.Flags=logS.sleep.flags;
+      if(logS.sleep.location) fields.Location=logS.sleep.location;
+      if(logS.sleep.notes) fields.Notes=logS.sleep.notes;
+      // Check for existing sleep entry today
+      const todayStr=now.slice(0,10);
+      const existing=data.sleep.find(r=>r.fields.Date&&r.fields.Date.slice(0,10)===todayStr);
+      if(existing) {
+        btn&&(btn.disabled=false,btn.textContent='Save entry');
+        if(!confirm('Sleep already recorded for today — overwrite it?')) return;
+        btn&&(btn.disabled=true,btn.textContent='Saving…');
+        res=await updateRecord(TBLS.sleep,existing.id,fields);
+        if(res.id){toast('Sleep updated ✓');logS.sleep={quality:0,flags:[],location:'',autoLoc:logS.sleep.autoLoc,notes:''};}
+      } else {
+        res=await createRecord(TBLS.sleep,fields);
+        if(res.records){toast('Sleep saved ✓');logS.sleep={quality:0,flags:[],location:'',autoLoc:logS.sleep.autoLoc,notes:''};}
+      }
+    } else if(sec==='bw') {
+      if(!logS.bw.type){toast('Select consistency');btn&&(btn.disabled=false,btn.textContent='Save entry');return;}
+      fields={Date:now,Consistency:logS.bw.type};
+      if(logS.bw.notes) fields.Notes=logS.bw.notes;
+      res=await createRecord(TBLS.bw,fields);
+      if(res.records){toast('Bowel entry saved ✓');logS.bw={type:'',notes:''};}
+    } else if(sec==='hay') {
+      if(!logS.hay.sev&&!logS.hay.syms.length){toast('Rate severity or select a symptom');btn&&(btn.disabled=false,btn.textContent='Save entry');return;}
+      fields={Date:now};
+      if(logS.hay.sev) fields.Severity=logS.hay.sev;
+      if(logS.hay.syms.length) fields.Symptoms=logS.hay.syms;
+      if(logS.hay.notes) fields.Notes=logS.hay.notes;
+      res=await createRecord(TBLS.hay,fields);
+      if(res.records){toast('Hay fever saved ✓');logS.hay={sev:0,syms:[],notes:''};}
+    } else if(sec==='fit') {
+      if(!logS.fit.type){toast('Select exercise type');btn&&(btn.disabled=false,btn.textContent='Save entry');return;}
+      const dur=logS.fit.dur?parseInt(logS.fit.dur):null;
+      if(dur!==null&&(isNaN(dur)||dur<=0)){toast('Enter a valid duration');btn&&(btn.disabled=false,btn.textContent='Save entry');return;}
+      fields={Date:now,'Exercise Type':logS.fit.type};
+      if(dur) fields['Duration (mins)']=dur;
+      if(logS.fit.intensity) fields.Intensity=logS.fit.intensity;
+      if(logS.fit.notes) fields.Notes=logS.fit.notes;
+      res=await createRecord(TBLS.fit,fields);
+      if(res.records){toast('Fitness saved ✓');logS.fit={type:'',dur:'',intensity:0,notes:''};}
+    } else if(sec==='wb') {
+      if(!logS.wb.energy){toast('Rate your energy level');btn&&(btn.disabled=false,btn.textContent='Save entry');return;}
+      fields={Date:now,Energy:logS.wb.energy};
+      if(logS.wb.notes) fields.Notes=logS.wb.notes;
+      res=await createRecord(TBLS.wb,fields);
+      if(res.records){toast('Wellbeing saved ✓');logS.wb={energy:0,notes:''};}
+    }
+    if(res&&!res.records) toast('Error: '+(res.error||'unknown'));
+  } catch(e){toast('Save failed: '+e.message);}
+  if(btn){btn.disabled=false;btn.textContent='Save entry';}
+  renderLogForm();
+}
+
+// ── HISTORY ───────────────────────────────────────────────
+async function loadHistory() {
+  $('page-history').innerHTML='<div style="padding:20px;font-size:13px;color:var(--ink3)">Loading…</div>';
+  try {
+    const [bpR,bwR,hayR,fitR,wbR,slpR]=await Promise.all([
+      getAllRecords(TBLS.bp),getAllRecords(TBLS.bw),getAllRecords(TBLS.hay),
+      getAllRecords(TBLS.fit),getAllRecords(TBLS.wb),
+      TBLS.sleep!=='tblSLEEP_TABLE_ID'?getAllRecords(TBLS.sleep):Promise.resolve([])
+    ]);
+    data.bp=bpR;data.bw=bwR;data.hay=hayR;data.fit=fitR;data.wb=wbR;data.sleep=slpR;
+    renderHistory();
+  } catch(e){$('page-history').innerHTML='<div style="padding:20px;font-size:13px;color:var(--hi)">Failed to load</div>';}
+}
+
+function renderHistory() {
+  const cutoff=histRange>=99999?0:Date.now()-histRange*864e5;
+  const svgIcon=(paths,vb='0 0 24 24')=>`<svg width="14" height="14" viewBox="${vb}" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${paths}</svg>`;
+  const kinds={
+    bp: {c:'var(--accent)',i:svgIcon('<path d="M22 12h-4l-3 9L9 3l-3 9H2"/>'),l:'BP'},
+    sleep:{c:'var(--sleep)',i:svgIcon('<path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>'),l:'Sleep'},
+    bw:  {c:'var(--warn)',i:svgIcon('<circle cx="12" cy="12" r="10"/><path d="M12 8v4l3 3"/>'),l:'Bowel'},
+    hay: {c:'var(--hi)',i:svgIcon('<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>'),l:'Hay fever'},
+    fit: {c:'var(--good)',i:svgIcon('<polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/>'),l:'Fitness'},
+    wb:  {c:'var(--pink)',i:svgIcon('<polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>'),l:'Energy'}
+  };
+  const all=[
+    ...data.bp.map(r=>({...r,_k:'bp'})),
+    ...data.sleep.map(r=>({...r,_k:'sleep'})),
+    ...data.bw.map(r=>({...r,_k:'bw'})),
+    ...data.hay.map(r=>({...r,_k:'hay'})),
+    ...data.fit.map(r=>({...r,_k:'fit'})),
+    ...data.wb.map(r=>({...r,_k:'wb'}))
+  ].filter(r=>(!cutoff||new Date(r.fields.Date)>=cutoff)&&(histFilter==='all'||r._k===histFilter))
+   .sort((a,b)=>new Date(b.fields.Date)-new Date(a.fields.Date));
+
+  const rangeOpts=[{v:7,l:'7d'},{v:30,l:'30d'},{v:90,l:'90d'},{v:99999,l:'All'}];
+  const filterOpts=[
+    {id:'all',l:'All',c:'var(--ink)'},
+    {id:'bp',l:'BP',c:'var(--accent)'},{id:'sleep',l:'Sleep',c:'var(--sleep)'},
+    {id:'bw',l:'Bowel',c:'var(--warn)'},{id:'hay',l:'Hay fever',c:'var(--hi)'},
+    {id:'fit',l:'Fitness',c:'var(--good)'},{id:'wb',l:'Energy',c:'var(--pink)'}
+  ];
+
+  let html=`
+  <div class="hist-header">
+    <div class="hist-title">History</div>
+    <div class="range-pill">${rangeOpts.map(o=>`<button class="rbtn${histRange===o.v?' active':''}" onclick="setHistRange(${o.v})">${o.l}</button>`).join('')}</div>
+  </div>
+  <div class="fchips">${filterOpts.map(o=>`<button class="fchip${histFilter===o.id?' active':''}" onclick="setHistFilter('${o.id}')" style="${histFilter===o.id?`background:${o.c};border-color:${o.c}`:''}">${o.l}</button>`).join('')}</div>`;
+
+  const chartDays=histRange<=7?7:30;
+  if(histFilter!=='all'){
+    let ch='';
+    if(histFilter==='bp')ch=renderBPChart(data.bp,'h',chartDays);
+    else if(histFilter==='sleep')ch=renderSleepChart(data.sleep,chartDays);
+    else if(histFilter==='bw')ch=renderBowelHeatmap(data.bw,'bowel-scroll-h',chartDays);
+    else if(histFilter==='hay')ch=renderHayChart(data.hay,chartDays);
+    else if(histFilter==='fit')ch=renderFitnessChart(data.fit,chartDays);
+    else if(histFilter==='wb')ch=renderEnergyChart(data.wb,chartDays);
+    if(ch)html+=`<div class="card" style="margin-bottom:14px">${ch}</div>`;
+  }
+
+  if(!all.length) {
+    html+='<div style="padding:40px 0;text-align:center;color:var(--ink4);font-size:13px">No entries in this range.</div>';
+  } else {
+    let prevDay='';
+    all.forEach((r,i)=>{
+      const f=r.fields,k=r._k,m=kinds[k];
+      const dayLbl=parseDate(f.Date).toLocaleDateString('en-GB',{weekday:'long',day:'numeric',month:'long',year:'numeric'}).toUpperCase();
+      if(dayLbl!==prevDay){html+=`<div class="hist-day-lbl">${dayLbl}</div>`;prevDay=dayLbl;}
+      let title='',sub='';
+      if(k==='bp'){title=`${f.Systolic}/${f.Diastolic} mmHg`;sub=`pulse ${f.Pulse}${f.Notes?' · '+f.Notes:''}`;}
+      if(k==='sleep'){title=`Quality ${f.Quality}/5`;sub=[f.Location&&'📍 '+f.Location,...(f.Flags||[]),f.Notes].filter(Boolean).join(' · ');}
+      if(k==='bw'){title=f.Consistency||'Bowel entry';sub=f.Notes||'';}
+      if(k==='hay'){title=`Severity ${f.Severity}/5`;sub=[(f.Symptoms||[]).slice(0,3).join(', '),f.Notes].filter(Boolean).join(' · ');}
+      if(k==='fit'){title=`${f['Exercise Type']||'Fitness'} · ${f['Duration (mins)']||0} min`;sub=[`Intensity ${f.Intensity}/5`,f.Notes].filter(Boolean).join(' · ');}
+      if(k==='wb'){title=`Energy ${f.Energy}/5`;sub=f.Notes||'';}
+      html+=`<div class="hentry">
+        <div class="hicon" style="background:${m.c}18;color:${m.c}">${m.i}</div>
+        <div style="flex:1;min-width:0">
+          <div style="display:flex;justify-content:space-between;align-items:baseline">
+            <div class="hentry-title">${title}</div>
+            <div class="hentry-time">${fmtTime(f.Date)}</div>
+          </div>
+          ${sub?`<div class="hentry-sub">${sub}</div>`:''}
+        </div>
+      </div>`;
+    });
+  }
+  $('page-history').innerHTML=html;
+  setTimeout(()=>{const el=$('bowel-scroll-h');if(el)el.scrollLeft=el.scrollWidth;},80);
+}
+
+function setHistRange(v){histRange=v;renderHistory();}
+function setHistFilter(v){histFilter=v;renderHistory();}
+
+// ── MEDS ──────────────────────────────────────────────────
+async function loadMeds() {
+  $('page-meds').innerHTML='<div style="padding:20px;font-size:13px;color:var(--ink3)">Loading…</div>';
+  try {
+    const recs=await getAllRecords(TBLS.med, '');
+    data.med=recs.filter(r=>r.fields.Name);
+    renderMeds();
+  } catch(e){$('page-meds').innerHTML='<div style="padding:20px;font-size:13px;color:var(--hi)">Failed to load</div>';}
+}
+
+function renderMeds() {
+  const active=data.med.filter(m=>m.fields.Active);
+  const inactive=data.med.filter(m=>!m.fields.Active);
+  const medCard=m=>`
+  <div class="med-card${m.fields.Active?'':' inactive'}">
+    <div style="flex:1">
+      <div class="med-card-name">${m.fields.Name}</div>
+      <div class="med-card-sub">${m.fields.Dose||''}${m.fields.Dose&&m.fields.Frequency?' · ':''}${m.fields.Frequency||''}</div>
+      ${(Array.isArray(m.fields['Time of Day'])&&m.fields['Time of Day'].length)?
+        `<div class="med-card-times">${m.fields['Time of Day'].map(t=>`<span class="med-tchip">${t}</span>`).join('')}</div>`:''
+      }
+    </div>
+    <button class="med-pbtn${m.fields.Active?'':' resume'}" onclick="toggleMedActive('${m.id}',${!m.fields.Active})">${m.fields.Active?'Pause':'Resume'}</button>
+  </div>`;
+  $('page-meds').innerHTML=`
+  <div class="meds-header">
+    <div class="meds-title">Medications</div>
+    <button class="btn-add" onclick="openAddMed()">+ Add</button>
+  </div>
+  ${active.length?`<div class="meds-slabel">Active · ${active.length}</div>${active.map(medCard).join('')}`:''}
+  ${inactive.length?`<div class="meds-slabel" style="margin-top:16px">Paused · ${inactive.length}</div>${inactive.map(medCard).join('')}`:''}
+  ${!data.med.length?'<div style="font-size:13px;color:var(--ink3);padding:10px 0">No medications added yet</div>':''}`;
+}
+
+async function toggleMedActive(id,val) {
+  try {
+    await atFetch(`${BASE}/${TBLS.med}/${id}`,{method:'PATCH',body:JSON.stringify({fields:{Active:val}})});
+    loadMeds();
+  } catch(e){toast('Failed to update');}
+}
+
+// ── ADD MED SHEET ─────────────────────────────────────────
+function buildMedTypeGrid() {
+  const el=$('med-type-btns');if(!el)return;
+  el.innerHTML=MED_TYPES.map(t=>`<button class="typebtn${medS.type===t?' active':''}" onclick="setMedType('${t}')">${t}</button>`).join('');
+}
+function buildMedTimeChips() {
+  const el=$('med-time-chips');if(!el)return;
+  el.innerHTML=MED_TIMES.map(t=>`<button class="chip${medS.times.includes(t)?' active':''}" onclick="toggleMedTime('${t}')">${t}</button>`).join('');
+}
+function setMedType(t){medS.type=t;buildMedTypeGrid();}
+function toggleMedTime(t){
+  const idx=medS.times.indexOf(t);
+  idx>-1?medS.times.splice(idx,1):medS.times.push(t);
+  buildMedTimeChips();
+}
+function medNameInput(){
+  const btn=$('med-sheet-save-btn');
+  if(btn) btn.disabled=!$('m-name')?.value?.trim();
+}
+function openAddMed(){
+  // Reset form
+  Object.assign(medS,{name:'',type:'Supplement',dose:'',frequency:'Once daily',times:[],start:'',end:'',notes:''});
+  ['m-name','m-dose','m-start','m-end','m-notes'].forEach(id=>{const el=$(id);if(el)el.value='';});
+  const freq=$('m-freq');if(freq)freq.value='Once daily';
+  const btn=$('med-sheet-save-btn');if(btn)btn.disabled=true;
+  buildMedTypeGrid();buildMedTimeChips();
+  $('add-med-sheet').classList.add('open');
+  setTimeout(()=>$('m-name')?.focus(),300);
+}
+function closeAddMed(){$('add-med-sheet').classList.remove('open');}
+
+async function saveMed() {
+  const name=$('m-name')?.value?.trim();
+  if(!name){toast('Name required');return;}
+  const btn=$('med-sheet-save-btn');btn.disabled=true;btn.textContent='Saving…';
+  const fields={Name:name,Type:medS.type,Frequency:$('m-freq')?.value||'Once daily',Active:true};
+  const dose=$('m-dose')?.value;if(dose) fields.Dose=dose;
+  if(medS.times.length) fields['Time of Day']=medS.times;
+  const start=$('m-start')?.value;if(start) fields['Start Date']=start;
+  const end=$('m-end')?.value;if(end) fields['End Date']=end;
+  const notes=$('m-notes')?.value;if(notes) fields.Notes=notes;
+  try {
+    const res=await createRecord(TBLS.med,fields);
+    if(res.records){toast('Medication added ✓');closeAddMed();loadMeds();}
+    else toast('Error: '+(res.error||'unknown'));
+  } catch(e){toast('Failed to save');}
+  btn.disabled=false;btn.textContent='Save';
+}
+
+// ── DAY DETAIL SHEET ──────────────────────────────────────
+function openDaySheet({type,dateKey}) {
+  daySheetState={type,dateKey};
+  const dateLabel=parseDate(dateKey).toLocaleDateString('en-GB',{weekday:'long',day:'numeric',month:'long'});
+  const focus={hay:{c:'var(--hi)',l:'Hay fever'},wb:{c:'var(--pink)',l:'Energy'},bw:{c:'var(--warn)',l:'Bowels'},sleep:{c:'var(--sleep)',l:'Sleep'},bp:{c:'var(--accent)',l:'Blood pressure'}}[type]||{c:'var(--accent)',l:'Entry'};
+  $('day-focus-lbl').textContent=`${focus.l} · Day detail`;
+  $('day-focus-lbl').style.color=focus.c;
+  $('day-date-lbl').textContent=dateLabel;
+
+  const ef=arr=>(arr||[]).filter(r=>r.fields.Date?.slice(0,10)===dateKey);
+  const bpD=ef(data.bp),bwD=ef(data.bw),hayD=ef(data.hay),fitD=ef(data.fit),wbD=ef(data.wb),slpD=ef(data.sleep);
+
+  const section=(title,color,items,empty)=>`
+  <div class="dsec">
+    <div class="dsec-title" style="color:${color}">${title}</div>
+    ${empty?'<div class="dempty">No entries</div>':items}
+  </div>`;
+  const row=(k,v,note='')=>`<div class="drow"><div class="drow-kv"><span class="drow-k">${k}</span><span class="drow-v">${v}</span></div>${note?`<div class="drow-note">"${note}"</div>`:''}</div>`;
+
+  $('day-content').innerHTML=[
+    section(`Hay fever · ${hayD.length||'none'}`,'var(--hi)',hayD.map(h=>row(`Severity ${h.fields.Severity}/5`,(h.fields.Symptoms||[]).join(', '),h.fields.Notes)).join(''),!hayD.length),
+    section(`Energy · ${wbD.length||'none'}`,'var(--pink)',wbD.map(w=>row('Energy',`${w.fields.Energy}/5`,w.fields.Notes)).join(''),!wbD.length),
+    section(`Bowels · ${bwD.length||'none'}`,'var(--warn)',bwD.map(b=>row(b.fields.Consistency?.split(' - ')[0]||'Bowel',b.fields.Consistency?.split(' - ')[1]||'',b.fields.Notes)).join(''),!bwD.length),
+    section(`Sleep · ${slpD.length||'none'}`,'var(--sleep)',slpD.map(s=>row(`Quality ${s.fields.Quality}/5`,`📍 ${s.fields.Location||'—'}`,[...(s.fields.Flags||[]),s.fields.Notes].filter(Boolean).join(' · '))).join(''),!slpD.length),
+    section(`Blood pressure · ${bpD.length||'none'}`,'var(--accent)',bpD.map(b=>row(`${b.fields.Systolic}/${b.fields.Diastolic} mmHg`,`pulse ${b.fields.Pulse}`,b.fields.Notes)).join(''),!bpD.length),
+    section(`Fitness · ${fitD.length||'none'}`,'var(--good)',fitD.map(f=>row(`${f.fields['Exercise Type']||'Exercise'} · ${f.fields['Duration (mins)']||0} min`,`Intensity ${f.fields.Intensity}/5`,f.fields.Notes)).join(''),!fitD.length),
+  ].join('');
+
+  $('day-sheet').classList.add('open');
+}
+function closeDaySheet(){$('day-sheet').classList.remove('open');}
+
+// ── VOICE / TEXT COMPOSER ─────────────────────────────────
+function composerOnInput() {
+  if(cState==='recording') return;
+  cText=$('composer-input').value;
+  updateComposerUI();
+}
+function composerOnKeydown(e) {
+  if(e.key==='Enter'&&cText.trim()&&cState==='idle') composerAction();
+}
+function composerAction() {
+  if(cState==='idle') {
+    if(cText.trim()) { submitText(); }
+    else { startVoice(); }
+  } else if(cState==='recording') {
+    stopVoice();
+  }
+}
+function composerDiscard() {
+  cText=''; cParsed=null; cState='idle';
+  $('composer-input').value='';
+  updateComposerUI();
+}
+
+function updateComposerUI() {
+  const input=$('composer-input');
+  const btn=$('composer-btn');
+  const parsed=$('composer-parsed');
+
+  // Clear wave/spinner injected nodes
+  ['c-wave-node','c-spin-node'].forEach(id=>{const el=$(id);if(el)el.remove();});
+  btn.style.display='';
+
+  if(cState==='idle') {
+    input.value=cText; input.readOnly=false; input.placeholder='Tell me what to log…';
+    parsed.classList.remove('show');
+    if(cText.trim()) {
+      btn.className='cbtn';
+      btn.innerHTML=`<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M22 2 11 13"/><path d="M22 2l-7 20-4-9-9-4 20-7z"/></svg>`;
+    } else {
+      btn.className='cbtn';
+      btn.innerHTML=`<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round"><path d="M12 2a3 3 0 0 1 3 3v7a3 3 0 0 1-6 0V5a3 3 0 0 1 3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/></svg>`;
+    }
+  } else if(cState==='recording') {
+    input.value=cText; input.readOnly=true; input.placeholder='';
+    parsed.classList.remove('show');
+    const wave=document.createElement('div');
+    wave.id='c-wave-node';wave.className='c-wave';
+    wave.innerHTML=Array.from({length:5}).map(()=>`<div class="c-wave-b" style="height:${4+Math.random()*14}px"></div>`).join('');
+    btn.before(wave);
+    btn.className='cbtn danger';
+    btn.innerHTML=`<svg width="12" height="12" viewBox="0 0 12 12"><rect width="12" height="12" rx="2" fill="#fff"/></svg>`;
+  } else if(cState==='parsing') {
+    input.value=''; input.readOnly=true; input.placeholder='Parsing…';
+    parsed.classList.remove('show');
+    const spin=document.createElement('div');spin.id='c-spin-node';spin.className='c-spin';
+    btn.before(spin); btn.style.display='none';
+  } else if(cState==='parsed') {
+    input.value=`"${cText}"`; input.readOnly=true;
+    btn.className='cbtn';
+    btn.innerHTML=`<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round"><path d="M12 2a3 3 0 0 1 3 3v7a3 3 0 0 1-6 0V5a3 3 0 0 1 3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/></svg>`;
+    if(cParsed) showParsedCard(cParsed);
+    parsed.classList.add('show');
+  }
+}
+
+function showParsedCard(d) {
+  const groupNames={bp:'Blood pressure',bowel:'Bowels',hayfever:'Hay fever',fitness:'Fitness',wellbeing:'Energy',sleep:'Sleep'};
+  const key=Object.keys(d)[0];
+  if(!key) return;
+  $('parsed-label').textContent=`PARSED · ${groupNames[key]||key.toUpperCase()}`;
+  const src=d[key];
+  const fieldMaps={
+    bp:[['Systolic','systolic'],['Diastolic','diastolic'],['Pulse','pulse'],['Notes','notes']],
+    bowel:[['Consistency','consistency'],['Notes','notes']],
+    hayfever:[['Severity','severity'],['Symptoms','symptoms'],['Notes','notes']],
+    fitness:[['Type','exerciseType'],['Duration','durationMins'],['Intensity','intensity'],['Notes','notes']],
+    wellbeing:[['Energy','energy'],['Notes','notes']],
+    sleep:[['Quality','quality'],['Location','location'],['Flags','flags'],['Notes','notes']]
+  };
+  const rows=(fieldMaps[key]||[]).map(([lbl,srcKey])=>{
+    const v=src[srcKey];if(!v&&v!==0) return '';
+    return `<div class="parsed-row"><span class="pr-k">${lbl}</span><span class="pr-v">${Array.isArray(v)?v.join(', '):v}</span></div>`;
+  }).join('');
+  $('parsed-rows').innerHTML=rows||'<div class="parsed-row"><span class="pr-k">No data detected</span></div>';
+}
+
+// Typed text submission
+function submitText() {
+  cState='parsing'; updateComposerUI();
+  parseTranscript(cText);
+}
+
+// Voice recording
+async function startVoice() {
+  try {
+    const stream=await navigator.mediaDevices.getUserMedia({audio:true});
+    const mt=getSupportedMime();
+    mediaRec=new MediaRecorder(stream,mt?{mimeType:mt}:{});
+    audioChunks=[];
+    mediaRec.ondataavailable=e=>{if(e.data.size>0)audioChunks.push(e.data);};
+    mediaRec.onstop=processAudio;
+    mediaRec.start(200);
+    isRecording=true; cState='recording'; cText='';
+    updateComposerUI();
+    waveTimer=setInterval(()=>{
+      document.querySelectorAll('.c-wave-b').forEach(b=>{b.style.height=(4+Math.random()*14)+'px';});
+    },120);
+  } catch(e){toast('Microphone access denied');}
+}
+async function stopVoice() {
+  if(!mediaRec||mediaRec.state==='inactive') return;
+  clearInterval(waveTimer);
+  try { mediaRec.stop(); } finally { mediaRec.stream.getTracks().forEach(t=>t.stop()); }
+  isRecording=false; cState='parsing'; updateComposerUI();
+}
+function getSupportedMime(){
+  const t=['audio/webm;codecs=opus','audio/webm','audio/ogg;codecs=opus','audio/mp4'];
+  for(const m of t) if(MediaRecorder.isTypeSupported(m)) return m;
+  return '';
+}
+async function processAudio() {
+  const mt=getSupportedMime()||audioChunks[0]?.type||'audio/webm';
+  const blob=new Blob(audioChunks,{type:mt});
+  const extMap={'audio/webm':'webm','audio/ogg':'ogg','audio/mp4':'mp4','audio/mpeg':'mp3','audio/wav':'wav'};
+  const ext=extMap[mt.split(';')[0]]||'webm';
+  try {
+    const fd=new FormData();fd.append('file',blob,`rec.${ext}`);fd.append('model','whisper-1');fd.append('language','en');
+    const wr=await fetch('https://api.openai.com/v1/audio/transcriptions',{method:'POST',headers:{'Authorization':`Bearer ${OAI_KEY}`},body:fd});
+    if(!wr.ok){const e=await wr.json();throw new Error(e.error?.message||'Whisper error');}
+    const wd=await wr.json();
+    const transcript=wd.text?.trim();
+    if(!transcript) throw new Error('Empty transcript');
+    cText=transcript; updateComposerUI();
+    await parseTranscript(transcript);
+  } catch(e){cState='idle';cText='';updateComposerUI();toast('Could not process audio');}
+}
+
+async function parseTranscript(transcript) {
+  const now=new Date().toISOString();
+  const sys=`You are a health data parser. Extract health data from a spoken or typed note and return ONLY valid JSON.
+Now: ${now}. The user is in London, UK.
+
+Return a JSON object with any of these top-level keys that are present:
+{
+  "bp": { "systolic": number, "diastolic": number, "pulse": number, "notes": string },
+  "bowel": { "consistency": one of exactly ["Type 1 - Hard lumps","Type 2 - Lumpy sausage","Type 3 - Cracked sausage","Type 4 - Smooth sausage (ideal)","Type 5 - Soft blobs","Type 6 - Fluffy pieces","Type 7 - Watery","Type 8 - Urgent"], "notes": string },
+  "hayfever": { "severity": integer 1-5, "symptoms": array from ["Sneezing","Runny nose","Itchy nose","Itchy eyes","Blocked nose","Itchy throat","Watery eyes","Headache"], "notes": string },
+  "fitness": { "exerciseType": one of ["Running","Cycling","Weights","Badminton","Hiking","Turbo","Circuits","Other"], "durationMins": number, "intensity": integer 1-5, "notes": string },
+  "wellbeing": { "energy": integer 1-5, "notes": string },
+  "sleep": { "quality": integer 1-5, "flags": array from ["Too hot/cold","Needed to go to the loo","Went to the loo"], "location": one of ["Home","Flat","Away"], "notes": string }
+}
+Only include keys actually mentioned. Return raw JSON only, no markdown.`;
+  try {
+    const r=await fetch('https://api.openai.com/v1/chat/completions',{
+      method:'POST',
+      headers:{'Content-Type':'application/json','Authorization':`Bearer ${OAI_KEY}`},
+      body:JSON.stringify({model:'gpt-4o',max_tokens:600,response_format:{type:'json_object'},messages:[{role:'system',content:sys},{role:'user',content:transcript}]})
+    });
+    const d=await r.json();
+    if(!r.ok) throw new Error(d.error?.message||'OpenAI error');
+    cParsed=JSON.parse(d.choices[0].message.content);
+    cState='parsed'; updateComposerUI();
+  } catch(e){cState='idle';updateComposerUI();toast('Could not parse: '+e.message);}
+}
+
+async function composerSave() {
+  if(!cParsed){toast('Nothing to save');return;}
+  const btn=document.querySelector('.pb.save');if(btn){btn.disabled=true;btn.textContent='Saving…';}
+  const now=new Date().toISOString();
+  const saves=[];
+  if(cParsed.bp){
+    const f={Date:now},b=cParsed.bp;
+    if(b.systolic) f.Systolic=b.systolic;if(b.diastolic) f.Diastolic=b.diastolic;
+    if(b.pulse) f.Pulse=b.pulse;if(b.notes) f.Notes=b.notes;
+    saves.push(createRecord(TBLS.bp,f));
+  }
+  if(cParsed.bowel){
+    const f={Date:now},b=cParsed.bowel;
+    if(b.consistency) f.Consistency=b.consistency;if(b.notes) f.Notes=b.notes;
+    saves.push(createRecord(TBLS.bw,f));
+  }
+  if(cParsed.hayfever){
+    const f={Date:now},h=cParsed.hayfever;
+    if(h.severity) f.Severity=h.severity;if(h.symptoms?.length) f.Symptoms=h.symptoms;if(h.notes) f.Notes=h.notes;
+    saves.push(createRecord(TBLS.hay,f));
+  }
+  if(cParsed.fitness){
+    const f={Date:now},ft=cParsed.fitness;
+    if(ft.exerciseType) f['Exercise Type']=ft.exerciseType;if(ft.durationMins) f['Duration (mins)']=ft.durationMins;
+    if(ft.intensity) f.Intensity=ft.intensity;if(ft.notes) f.Notes=ft.notes;
+    saves.push(createRecord(TBLS.fit,f));
+  }
+  if(cParsed.wellbeing){
+    const f={Date:now},w=cParsed.wellbeing;
+    if(w.energy) f.Energy=w.energy;if(w.notes) f.Notes=w.notes;
+    saves.push(createRecord(TBLS.wb,f));
+  }
+  if(cParsed.sleep&&TBLS.sleep!=='tblSLEEP_TABLE_ID'){
+    const f={Date:now},s=cParsed.sleep;
+    if(s.quality) f.Quality=s.quality;if(s.flags?.length) f.Flags=s.flags;
+    if(s.location) f.Location=s.location;if(s.notes) f.Notes=s.notes;
+    saves.push(createRecord(TBLS.sleep,f));
+  }
+  try {
+    await Promise.all(saves);
+    toast(`Saved to ${saves.length} table${saves.length!==1?'s':''} ✓`);
+    composerDiscard();
+  } catch(e){toast('Failed to save');}
+  if(btn){btn.disabled=false;btn.textContent='Save to log';}
+}
+
+// ── BOOT ──────────────────────────────────────────────────
+initPin();
+</script>
+</body>
+</html>
