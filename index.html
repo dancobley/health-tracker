@@ -91,6 +91,16 @@ body{font-family:var(--f);color:var(--ink);font-variant-numeric:tabular-nums}
 .chart-scroll{overflow-x:auto;overflow-y:hidden;-webkit-overflow-scrolling:touch;scrollbar-width:none}
 .chart-scroll::-webkit-scrollbar{display:none}
 
+/* STATUS BADGES */
+.status-badge{display:inline-flex;align-items:center;gap:3px;font-size:9px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;padding:2px 7px;border-radius:999px;white-space:nowrap}
+.status-badge.done{background:rgba(15,169,104,.13);color:var(--good)}
+.status-badge.pending{background:rgba(122,127,140,.13);color:var(--ink3)}
+.status-badge.warning{background:rgba(231,138,31,.15);color:var(--warn)}
+
+/* LONG PRESS */
+.lp-card{cursor:pointer;user-select:none;-webkit-user-select:none;touch-action:pan-y}
+.lp-card.lp-active{opacity:.8;transform:scale(.985);transition:transform .15s,opacity .15s}
+
 /* DASHBOARD */
 .dash-day{font-size:13px;color:var(--ink3);font-weight:500;letter-spacing:.2px;margin-bottom:2px}
 .dash-greeting{font-size:28px;font-weight:700;letter-spacing:-.5px;color:var(--ink);margin-bottom:18px;line-height:1.15}
@@ -398,13 +408,14 @@ const AT_TOKEN = "__AT_TOKEN__";
 const OAI_KEY  = "__OAI_KEY__";
 const BASE     = "appqwgqTCHIvBd5EJ";
 const TBLS = {
-  bp:    "tbl8W1S2OztDe3vvs",
-  bw:    "tblrPIVx6kGVoNDCI",
-  hay:   "tblF5t8OVfXrAGxRB",
-  fit:   "tblrBn1YrSW7XzqxF",
-  wb:    "tbl0qnYJWaLCZhDBq",
-  med:   "tblsKegW3HTOXQmgY",
-  sleep: "tbl41Jv8y0IXO3VbD"
+  bp:     "tbl8W1S2OztDe3vvs",
+  bw:     "tblrPIVx6kGVoNDCI",
+  hay:    "tblF5t8OVfXrAGxRB",
+  fit:    "tblrBn1YrSW7XzqxF",
+  wb:     "tbl0qnYJWaLCZhDBq",
+  med:    "tblsKegW3HTOXQmgY",
+  sleep:  "tbl41Jv8y0IXO3VbD",
+  medlog: "tblyLrPIos4MAKiXt"
 };
 
 const HAY_SYMS = ['Sneezing','Runny nose','Itchy nose','Itchy eyes','Blocked nose','Itchy throat','Watery eyes','Headache'];
@@ -415,7 +426,7 @@ const MED_TYPES   = ['Prescription','Over-the-counter','Supplement','Vitamin'];
 const MED_TIMES   = ['Morning','Midday','Evening','Night','With food'];
 
 // ── STATE ─────────────────────────────────────────────────
-let data = {bp:[],bw:[],hay:[],fit:[],wb:[],sleep:[],med:[]};
+let data = {bp:[],bw:[],hay:[],fit:[],wb:[],sleep:[],med:[],medlog:[]};
 let curPage = 'today';
 let logTab = 'bp';
 let histRange = 30;
@@ -429,7 +440,8 @@ const logS = {
   bw:    {type:'',notes:''},
   hay:   {sev:0,syms:[],notes:''},
   fit:   {type:'',dur:'',intensity:0,notes:''},
-  wb:    {energy:0,notes:''}
+  wb:    {energy:0,notes:''},
+  datetime: ''
 };
 
 // Add med state
@@ -615,20 +627,34 @@ async function loadToday() {
   setSync('busy');
   $('page-today').innerHTML = '<div style="padding:20px;font-size:13px;color:var(--ink3)">Loading…</div>';
   try {
-    const [bpR,bwR,hayR,fitR,wbR,slpR,medR] = await Promise.all([
+    const [bpR,bwR,hayR,fitR,wbR,slpR,medR,mlogR] = await Promise.all([
       getAllRecords(TBLS.bp), getAllRecords(TBLS.bw), getAllRecords(TBLS.hay),
       getAllRecords(TBLS.fit), getAllRecords(TBLS.wb),
       TBLS.sleep !== 'tblSLEEP_TABLE_ID' ? getAllRecords(TBLS.sleep) : Promise.resolve([]),
-      getAllRecords(TBLS.med, '')
+      getAllRecords(TBLS.med, ''),
+      getAllRecords(TBLS.medlog)
     ]);
     data.bp=bpR;data.bw=bwR;data.hay=hayR;data.fit=fitR;data.wb=wbR;data.sleep=slpR;
     data.med=medR.filter(r=>r.fields.Name);
+    data.medlog=mlogR;
     renderToday();
     setSync('ok');
   } catch(e) {
     setSync('err');
     $('page-today').innerHTML = '<div style="padding:20px;font-size:13px;color:var(--hi)">Failed to load data</div>';
   }
+}
+
+// ── LONG PRESS (home cards → log tab) ─────────────────────
+let _lpTimer=null,_lpEl=null;
+function startLP(tab,el){
+  cancelLP();
+  _lpEl=el;el.classList.add('lp-active');
+  _lpTimer=setTimeout(()=>{cancelLP();navTo('log');switchLogTab(tab);},500);
+}
+function cancelLP(){
+  if(_lpTimer){clearTimeout(_lpTimer);_lpTimer=null;}
+  if(_lpEl){_lpEl.classList.remove('lp-active');_lpEl=null;}
 }
 
 function renderToday() {
@@ -638,7 +664,15 @@ function renderToday() {
   const lastSlp = data.sleep[0]?.fields || null;
   const now     = new Date();
   const today   = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}`;
-  const todayBW = data.bw.filter(r=>r.fields.Date&&r.fields.Date.slice(0,10)===today).length;
+  const todayBW  = data.bw.filter(r=>r.fields.Date&&r.fields.Date.slice(0,10)===today).length;
+  const todayBP  = data.bp.filter(r=>r.fields.Date?.slice(0,10)===today).length;
+  const todaySleep=data.sleep.filter(r=>r.fields.Date?.slice(0,10)===today).length;
+  const todayHay = data.hay.filter(r=>r.fields.Date?.slice(0,10)===today).length;
+  const todayWB  = data.wb.filter(r=>r.fields.Date?.slice(0,10)===today).length;
+  const todayFit = data.fit.filter(r=>r.fields.Date?.slice(0,10)===today).length;
+  const todayMissed=(data.medlog||[]).filter(r=>r.fields.Date?.slice(0,10)===today&&r.fields.Status==='Missed').length;
+  const sbadge=(n,meds=false)=>meds?(n>0?`<span class="status-badge warning">⚠ ${n} missed</span>`:`<span class="status-badge done">✓ All taken</span>`):(n>0?`<span class="status-badge done">✓ Logged</span>`:`<span class="status-badge pending">○ Not yet</span>`);
+  const LP=(tab)=>`onmousedown="startLP('${tab}',this)" onmouseup="cancelLP()" onmouseleave="cancelLP()" ontouchstart="startLP('${tab}',this);event.preventDefault()" ontouchend="cancelLP()" ontouchmove="cancelLP()"`;
   const bpSys   = lastBP.Systolic || 0;
   const bpStatus = bpSys >= 140 ? {c:'var(--hi)',t:'Elevated'} : bpSys >= 130 ? {c:'var(--warn)',t:'Slightly high'} : {c:'var(--good)',t:'In range'};
   const hay7avg  = data.hay.slice(0,7).reduce((s,r)=>s+(r.fields.Severity||0),0) / Math.max(1,Math.min(7,data.hay.length));
@@ -651,7 +685,7 @@ function renderToday() {
   <div class="dash-greeting">${getGreeting()}, Dan</div>
 
   <!-- BP HERO -->
-  <div class="card hero" style="margin-bottom:10px">
+  <div class="card hero lp-card" style="margin-bottom:10px" ${LP('bp')}>
     <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px">
       <div>
         <div class="clabel" style="margin-bottom:8px">Blood pressure</div>
@@ -662,6 +696,7 @@ function renderToday() {
         ${bpSys ? `<div class="bp-status"><span class="sdot" style="background:${bpStatus.c}"></span><span style="color:${bpStatus.c}">${bpStatus.t}</span><span style="color:var(--ink3);font-weight:400;margin-left:4px">· ♥ ${lastBP.Pulse||'—'} bpm</span></div>` : ''}
       </div>
       <div class="bp-meta">
+        <div style="margin-bottom:4px">${sbadge(todayBP)}</div>
         <div class="bp-meta-day">${fmtRel(data.bp[0]?.fields?.Date)}</div>
         <div class="bp-meta-count">${data.bp.length} readings</div>
       </div>
@@ -671,7 +706,7 @@ function renderToday() {
 
   <!-- SLEEP -->
   ${lastSlp ? `
-  <div class="card" style="margin-bottom:10px">
+  <div class="card lp-card" style="margin-bottom:10px" ${LP('sleep')}>
     <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px">
       <div>
         <div class="clabel" style="color:var(--sleep);margin-bottom:6px">Sleep</div>
@@ -685,6 +720,7 @@ function renderToday() {
         </div>
       </div>
       <div style="text-align:right">
+        <div style="margin-bottom:4px">${sbadge(todaySleep)}</div>
         <div style="font-size:10px;color:var(--ink3)">7-day avg</div>
         <div style="font-size:20px;font-weight:600;color:var(--ink)">${slp7avg.toFixed(1)}</div>
       </div>
@@ -696,22 +732,24 @@ function renderToday() {
 
   <!-- HAY + ENERGY TILES -->
   <div class="tile-grid">
-    <div class="card" style="margin-bottom:0;min-width:0;padding:14px">
+    <div class="card lp-card" style="margin-bottom:0;min-width:0;padding:14px" ${LP('hay')}>
       <div class="tile-hdr">
         <div class="clabel">Hay fever</div>
         <div class="tile-avg"><div class="tile-avg-lbl">7-day avg</div><div class="tile-avg-num">${hay7avg.toFixed(1)}</div></div>
       </div>
+      <div style="margin:3px 0 5px">${sbadge(todayHay)}</div>
       <div style="display:flex;align-items:baseline;gap:4px">
         <span class="tile-big">${lastHay.Severity||'—'}</span>
         ${lastHay.Severity?'<span class="tile-unit">/5</span>':''}
       </div>
       ${renderMiniBars(data.hay,'hay')}
     </div>
-    <div class="card" style="margin-bottom:0;min-width:0;padding:14px">
+    <div class="card lp-card" style="margin-bottom:0;min-width:0;padding:14px" ${LP('wb')}>
       <div class="tile-hdr">
         <div class="clabel">Energy</div>
         <div class="tile-avg"><div class="tile-avg-lbl">7-day avg</div><div class="tile-avg-num">${wb7avg.toFixed(1)}</div></div>
       </div>
+      <div style="margin:3px 0 5px">${sbadge(todayWB)}</div>
       <div style="display:flex;align-items:baseline;gap:4px">
         <span class="tile-big">${lastWB.Energy||'—'}</span>
         ${lastWB.Energy?'<span class="tile-unit">/5</span>':''}
@@ -721,20 +759,20 @@ function renderToday() {
   </div>
 
   <!-- BOWEL CALENDAR -->
-  <div class="card" style="margin-bottom:10px">
+  <div class="card lp-card" style="margin-bottom:10px" ${LP('bw')}>
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
       <div class="clabel">Bowel regularity</div>
-      <div style="font-size:11px;color:var(--ink2);font-weight:600">${todayBW} today</div>
+      ${sbadge(todayBW)}
     </div>
     ${renderBowelHeatmap(data.bw)}
   </div>
 
   <!-- ACTIVE MEDS -->
   ${activeMeds.length ? `
-  <div class="card" style="margin-bottom:10px">
+  <div class="card lp-card" style="margin-bottom:10px" ${LP('med')}>
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
       <div class="clabel">Active medications</div>
-      <div style="font-size:11px;color:var(--accent);font-weight:600">${activeMeds.length}</div>
+      ${sbadge(todayMissed,true)}
     </div>
     <div style="max-height:200px;overflow-y:auto;-webkit-overflow-scrolling:touch">
     ${activeMeds.map(m=>`
@@ -972,6 +1010,10 @@ function renderLog() {
 
 function switchLogTab(tab) {
   logTab=tab;
+  // Reset datetime to now when switching tabs
+  const _n=new Date();
+  const _p=n=>String(n).padStart(2,'0');
+  logS.datetime=`${_n.getFullYear()}-${_p(_n.getMonth()+1)}-${_p(_n.getDate())}T${_p(_n.getHours())}:${_p(_n.getMinutes())}`;
   const tabIds=['bp','sleep','bw','hay','fit','wb'];
   document.querySelectorAll('#log-tabs .log-tab').forEach((t,i)=>{
     t.classList.toggle('active',tabIds[i]===tab);
@@ -983,19 +1025,22 @@ function switchLogTab(tab) {
 function renderLogForm() {
   const el=$('log-form');
   if(!el) return;
+  // Ensure datetime is set (first open before any switchLogTab call)
+  if(!logS.datetime){const _n=new Date();const _p=n=>String(n).padStart(2,'0');logS.datetime=`${_n.getFullYear()}-${_p(_n.getMonth()+1)}-${_p(_n.getDate())}T${_p(_n.getHours())}:${_p(_n.getMinutes())}`;}
+  const dtField=`<div class="lfield"><div class="llabel">Date &amp; Time</div><input type="datetime-local" class="linput" value="${logS.datetime}" oninput="logS.datetime=this.value"></div>`;
   let html='';
   if(logTab==='bp') {
     html=`
     <div class="lfield"><div class="llabel">Reading</div>
       <div class="g3">
-        <input class="linput center" type="number" id="log-sys" placeholder="120" value="${logS.bp.sys}" oninput="logS.bp.sys=this.value">
-        <input class="linput center" type="number" id="log-dia" placeholder="80" value="${logS.bp.dia}" oninput="logS.bp.dia=this.value">
-        <input class="linput center" type="number" id="log-pulse" placeholder="72" value="${logS.bp.pulse}" oninput="logS.bp.pulse=this.value">
+        <input class="linput center" type="number" id="log-sys" placeholder="Sys" value="${logS.bp.sys}" oninput="logS.bp.sys=this.value">
+        <input class="linput center" type="number" id="log-dia" placeholder="Dia" value="${logS.bp.dia}" oninput="logS.bp.dia=this.value">
+        <input class="linput center" type="number" id="log-pulse" placeholder="BPM" value="${logS.bp.pulse}" oninput="logS.bp.pulse=this.value">
       </div>
       <div class="g3-sub"><span>SYSTOLIC</span><span>DIASTOLIC</span><span>PULSE</span></div>
     </div>
     <div class="lfield"><div class="llabel">Notes</div><input class="linput" id="log-bp-notes" placeholder="optional…" value="${logS.bp.notes}" oninput="logS.bp.notes=this.value"></div>
-    <button class="btn-save" onclick="saveLogEntry('bp')">Save entry</button>`;
+    ${dtField}<button class="btn-save" onclick="saveLogEntry('bp')">Save entry</button>`;
   } else if(logTab==='sleep') {
     html=`
     <div class="lfield"><div class="llabel">How well did you sleep?</div>
@@ -1020,7 +1065,7 @@ function renderLogForm() {
       </div>
     </div>
     <div class="lfield"><div class="llabel">Notes</div><input class="linput" id="log-sleep-notes" placeholder="dreams, wake-ups, anything else…" value="${logS.sleep.notes}" oninput="logS.sleep.notes=this.value"></div>
-    <button class="btn-save" onclick="saveLogEntry('sleep')">Save entry</button>`;
+    ${dtField}<button class="btn-save" onclick="saveLogEntry('sleep')">Save entry</button>`;
   } else if(logTab==='bw') {
     html=`
     <div class="lfield"><div class="llabel">Consistency (Bristol scale)</div>
@@ -1033,7 +1078,7 @@ function renderLogForm() {
       }).join('')}</div>
     </div>
     <div class="lfield"><div class="llabel">Notes</div><input class="linput" id="log-bw-notes" placeholder="context, timing, anything else…" value="${logS.bw.notes}" oninput="logS.bw.notes=this.value"></div>
-    <button class="btn-save" onclick="saveLogEntry('bw')">Save entry</button>`;
+    ${dtField}<button class="btn-save" onclick="saveLogEntry('bw')">Save entry</button>`;
   } else if(logTab==='hay') {
     html=`
     <div class="lfield"><div class="llabel">Severity</div>
@@ -1043,7 +1088,7 @@ function renderLogForm() {
       <div class="chips-wrap">${HAY_SYMS.map(s=>`<button class="chip${logS.hay.syms.includes(s)?' active':''}" onclick="toggleSym('hay','syms','${s}')">${s}</button>`).join('')}</div>
     </div>
     <div class="lfield"><div class="llabel">Notes</div><input class="linput" id="log-hay-notes" placeholder="triggers, location, anything else…" value="${logS.hay.notes}" oninput="logS.hay.notes=this.value"></div>
-    <button class="btn-save" onclick="saveLogEntry('hay')">Save entry</button>`;
+    ${dtField}<button class="btn-save" onclick="saveLogEntry('hay')">Save entry</button>`;
   } else if(logTab==='fit') {
     html=`
     <div class="lfield"><div class="llabel">Type</div>
@@ -1054,7 +1099,7 @@ function renderLogForm() {
       <div class="scale-row">${[1,2,3,4,5].map(n=>`<button class="sbtn${logS.fit.intensity===n?' active':''}" onclick="setScale('fit','intensity',${n})">${n}</button>`).join('')}</div>
     </div>
     <div class="lfield"><div class="llabel">Notes</div><input class="linput" id="log-fit-notes" placeholder="how did it feel?" value="${logS.fit.notes}" oninput="logS.fit.notes=this.value"></div>
-    <button class="btn-save" onclick="saveLogEntry('fit')">Save entry</button>`;
+    ${dtField}<button class="btn-save" onclick="saveLogEntry('fit')">Save entry</button>`;
   } else if(logTab==='wb') {
     html=`
     <div class="lfield"><div class="llabel">How is your energy?</div>
@@ -1062,7 +1107,7 @@ function renderLogForm() {
       <div class="scale-caps"><span>Drained</span><span>Excellent</span></div>
     </div>
     <div class="lfield"><div class="llabel">Notes</div><input class="linput" id="log-wb-notes" placeholder="how are you feeling?" value="${logS.wb.notes}" oninput="logS.wb.notes=this.value"></div>
-    <button class="btn-save" onclick="saveLogEntry('wb')">Save entry</button>`;
+    ${dtField}<button class="btn-save" onclick="saveLogEntry('wb')">Save entry</button>`;
   }
   el.innerHTML=html;
 }
@@ -1097,7 +1142,7 @@ function startGeoLoc() {
 async function saveLogEntry(sec) {
   const btn=document.querySelector('#log-form .btn-save');
   if(btn){btn.disabled=true;btn.textContent='Saving…';}
-  const now=new Date().toISOString();
+  const now=logS.datetime?new Date(logS.datetime).toISOString():new Date().toISOString();
   try {
     let fields={},res;
     if(sec==='bp') {
@@ -1160,6 +1205,7 @@ async function saveLogEntry(sec) {
       if(res.records){toast('Wellbeing saved ✓');logS.wb={energy:0,notes:''};}
     }
     if(res&&!res.records) toast('Error: '+(res.error||'unknown'));
+    else silentRefresh();
   } catch(e){toast('Save failed: '+e.message);}
   if(btn){btn.disabled=false;btn.textContent='Save entry';}
   renderLogForm();
@@ -1274,6 +1320,9 @@ async function loadMeds() {
 function renderMeds() {
   const active=data.med.filter(m=>m.fields.Active);
   const inactive=data.med.filter(m=>!m.fields.Active);
+  const now=new Date();
+  const today=`${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}`;
+  const missedToday=new Set((data.medlog||[]).filter(r=>r.fields.Date?.slice(0,10)===today&&r.fields.Status==='Missed').map(r=>r.fields['Med Name']));
   const medCard=m=>`
   <div class="med-card${m.fields.Active?'':' inactive'}">
     <div style="flex:1">
@@ -1283,7 +1332,10 @@ function renderMeds() {
         `<div class="med-card-times">${m.fields['Time of Day'].map(t=>`<span class="med-tchip">${t}</span>`).join('')}</div>`:''
       }
     </div>
-    <button class="med-pbtn${m.fields.Active?'':' resume'}" onclick="toggleMedActive('${m.id}',${!m.fields.Active})">${m.fields.Active?'Pause':'Resume'}</button>
+    <div style="display:flex;flex-direction:column;gap:5px;align-items:flex-end">
+      ${m.fields.Active?`<button class="med-mbtn${missedToday.has(m.fields.Name)?' missed-done':''}" onclick="logMedMissed('${m.fields.Name.replace(/'/g,"\\'")}',this)" ${missedToday.has(m.fields.Name)?'disabled':''} style="font-size:11px;padding:4px 10px;border-radius:8px;border:1px solid var(--warn);background:${missedToday.has(m.fields.Name)?'rgba(231,138,31,.15)':'transparent'};color:${missedToday.has(m.fields.Name)?'var(--warn)':'var(--ink3)'};cursor:${missedToday.has(m.fields.Name)?'default':'pointer'};font-family:var(--f);font-weight:600">${missedToday.has(m.fields.Name)?'✓ Missed':'Missed'}</button>`:''}
+      <button class="med-pbtn${m.fields.Active?'':' resume'}" onclick="toggleMedActive('${m.id}',${!m.fields.Active})">${m.fields.Active?'Pause':'Resume'}</button>
+    </div>
   </div>`;
   $('page-meds').innerHTML=`
   <div class="meds-header">
@@ -1300,6 +1352,21 @@ async function toggleMedActive(id,val) {
     await atFetch(`${BASE}/${TBLS.med}/${id}`,{method:'PATCH',body:JSON.stringify({fields:{Active:val}})});
     loadMeds();
   } catch(e){toast('Failed to update');}
+}
+
+async function logMedMissed(medName,btn) {
+  if(btn){btn.disabled=true;btn.textContent='...';}
+  const now=new Date().toISOString();
+  try {
+    await createRecord(TBLS.medlog,{Date:now,'Med Name':medName,Status:'Missed'});
+    toast(`${medName} marked as missed`);
+    silentRefresh();
+    // Re-render meds so button updates
+    const today=now.slice(0,10);
+    data.medlog=(data.medlog||[]).concat([{fields:{Date:now,'Med Name':medName,Status:'Missed'}}]);
+    renderMeds();
+  } catch(e){toast('Failed to log missed med');}
+  if(btn){btn.disabled=false;btn.textContent='Missed';}
 }
 
 // ── ADD MED SHEET ─────────────────────────────────────────
@@ -1590,8 +1657,27 @@ async function composerSave() {
     await Promise.all(saves);
     toast(`Saved to ${saves.length} table${saves.length!==1?'s':''} ✓`);
     composerDiscard();
+    silentRefresh();
   } catch(e){toast('Failed to save');}
   if(btn){btn.disabled=false;btn.textContent='Save to log';}
+}
+
+// ── SILENT REFRESH ────────────────────────────────────────
+async function silentRefresh() {
+  try {
+    const [bpR,bwR,hayR,fitR,wbR,slpR,medR,mlogR] = await Promise.all([
+      getAllRecords(TBLS.bp), getAllRecords(TBLS.bw), getAllRecords(TBLS.hay),
+      getAllRecords(TBLS.fit), getAllRecords(TBLS.wb),
+      TBLS.sleep!=='tblSLEEP_TABLE_ID'?getAllRecords(TBLS.sleep):Promise.resolve([]),
+      getAllRecords(TBLS.med,''),
+      TBLS.medlog?getAllRecords(TBLS.medlog):Promise.resolve([])
+    ]);
+    data.bp=bpR;data.bw=bwR;data.hay=hayR;data.fit=fitR;data.wb=wbR;data.sleep=slpR;
+    data.med=medR.filter(r=>r.fields.Name);
+    data.medlog=mlogR;
+    if(curPage==='today') renderToday();
+    setSync('ok');
+  } catch(e){/* silently fail */}
 }
 
 // ── BOOT ──────────────────────────────────────────────────
