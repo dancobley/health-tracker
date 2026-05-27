@@ -1,5 +1,5 @@
 [build]
-  command = "sed -e 's/__AT_TOKEN__/'\"$AT_TOKEN\"'/g' -e 's/__OAI_KEY__/'\"$OAI_KEY\"'/g' index.html > index.built.html && mv index.built.html index.html"
+  command = "bash build.sh"
   publish = "."
 
 [build.environment]
