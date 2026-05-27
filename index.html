@@ -184,7 +184,9 @@ body{font-family:var(--f);color:var(--ink);font-variant-numeric:tabular-nums}
 .fchip.active{color:#fff}
 .hist-day-lbl{font-size:11px;font-weight:600;color:var(--ink3);text-transform:uppercase;letter-spacing:.6px;margin-top:16px;margin-bottom:8px}
 .hist-day-lbl:first-child{margin-top:0}
-.hentry{display:flex;gap:12px;padding:10px 0;border-bottom:1px solid var(--line)}
+.hentry{display:flex;gap:12px;padding:10px 0;border-bottom:1px solid var(--line);align-items:center}
+.hentry-tap{cursor:pointer;border-radius:10px;margin:0 -8px;padding:10px 8px;transition:background .12s}
+.hentry-tap:active{background:var(--as)}
 .hicon{width:32px;height:32px;border-radius:10px;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:700}
 .hentry-title{font-size:14px;font-weight:600;color:var(--ink)}
 .hentry-sub{font-size:12px;color:var(--ink3);margin-top:2px}
@@ -229,6 +231,12 @@ body{font-family:var(--f);color:var(--ink);font-variant-numeric:tabular-nums}
 #day-sheet.open{display:block}
 #day-backdrop{position:absolute;inset:0;background:rgba(15,20,40,.35);backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px);animation:fadeIn .2s}
 #day-panel{position:absolute;left:0;right:0;bottom:0;background:var(--bg);border-radius:22px 22px 0 0;max-height:74%;overflow-y:auto;box-shadow:0 -8px 32px rgba(0,0,0,.18);animation:slideUp .28s cubic-bezier(.2,.7,.3,1);padding:12px 18px calc(20px + var(--safe-bottom))}
+
+/* EDIT SHEET */
+#edit-sheet{position:absolute;inset:0;z-index:80;display:none}
+#edit-sheet.open{display:block}
+#edit-backdrop{position:absolute;inset:0;background:rgba(15,20,40,.4);backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px);animation:fadeIn .2s}
+#edit-panel{position:absolute;left:0;right:0;bottom:0;top:calc(var(--safe-top)+60px);background:var(--bg);border-radius:24px 24px 0 0;display:flex;flex-direction:column;box-shadow:0 -8px 32px rgba(0,0,0,.15);animation:slideUp .3s cubic-bezier(.2,.7,.3,1)}
 .dsec{margin-bottom:14px}
 .dsec-title{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;margin-bottom:6px}
 .drow{padding:6px 0;border-top:1px solid var(--line)}
@@ -400,6 +408,22 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid 
     <div id="day-content"></div>
   </div>
 </div>
+<!-- EDIT ENTRY SHEET -->
+<div id="edit-sheet">
+  <div id="edit-backdrop" onclick="closeEditSheet()"></div>
+  <div id="edit-panel">
+    <div class="sgrab"></div>
+    <div class="shdr">
+      <button class="scancel" onclick="closeEditSheet()">Cancel</button>
+      <div class="stitle" id="edit-title">Edit entry</div>
+      <button class="ssave" id="edit-save-btn" onclick="saveEditEntry()">Save</button>
+    </div>
+    <div class="sbody" id="edit-body"></div>
+    <div style="padding:0 20px calc(20px + var(--safe-bottom))">
+      <button id="edit-delete-btn" onclick="deleteEditEntry()" style="width:100%;padding:12px;border-radius:12px;border:1.5px solid var(--hi);background:transparent;color:var(--hi);font-size:14px;font-weight:600;cursor:pointer;font-family:var(--f)">Delete entry</button>
+    </div>
+  </div>
+</div>
 </div><!-- /app -->
 
 <script>
@@ -420,7 +444,7 @@ const TBLS = {
 
 const HAY_SYMS = ['Sneezing','Runny nose','Itchy nose','Itchy eyes','Blocked nose','Itchy throat','Watery eyes','Headache'];
 const FIT_TYPES = ['Running','Cycling','Weights','Badminton','Hiking','Turbo','Circuits','Other'];
-const SLEEP_FLAGS = ['Too hot/cold','Needed to go to the loo','Went to the loo'];
+const SLEEP_FLAGS = ['Used fan','Woke wanting loo','Went to the loo','Too hot/cold'];
 const SLEEP_LOCS  = ['Home','Flat','Away'];
 const MED_TYPES   = ['Prescription','Over-the-counter','Supplement','Vitamin'];
 const MED_TIMES   = ['Morning','Midday','Evening','Night','With food'];
@@ -1028,6 +1052,13 @@ function renderLogForm() {
   // Ensure datetime is set (first open before any switchLogTab call)
   if(!logS.datetime){const _n=new Date();const _p=n=>String(n).padStart(2,'0');logS.datetime=`${_n.getFullYear()}-${_p(_n.getMonth()+1)}-${_p(_n.getDate())}T${_p(_n.getHours())}:${_p(_n.getMinutes())}`;}
   const dtField=`<div class="lfield"><div class="llabel">Date &amp; Time</div><input type="datetime-local" class="linput" value="${logS.datetime}" oninput="logS.datetime=this.value"></div>`;
+  // Logged today badge
+  const _tn=new Date();
+  const _td=`${_tn.getFullYear()}-${String(_tn.getMonth()+1).padStart(2,'0')}-${String(_tn.getDate()).padStart(2,'0')}`;
+  const _cnt=(data[logTab]||[]).filter(r=>r.fields.Date?.slice(0,10)===_td).length;
+  const logBadge=_cnt>0
+    ?`<div style="margin-bottom:14px;display:flex;align-items:center;gap:8px"><span class="status-badge done">✓ Logged today</span><span style="font-size:11px;color:var(--ink3)">${_cnt} entr${_cnt===1?'y':'ies'}</span></div>`
+    :`<div style="margin-bottom:14px"><span class="status-badge pending">○ Not yet logged today</span></div>`;
   let html='';
   if(logTab==='bp') {
     html=`
@@ -1109,7 +1140,7 @@ function renderLogForm() {
     <div class="lfield"><div class="llabel">Notes</div><input class="linput" id="log-wb-notes" placeholder="how are you feeling?" value="${logS.wb.notes}" oninput="logS.wb.notes=this.value"></div>
     ${dtField}<button class="btn-save" onclick="saveLogEntry('wb')">Save entry</button>`;
   }
-  el.innerHTML=html;
+  el.innerHTML=logBadge+html;
 }
 
 // Log form helpers
@@ -1130,11 +1161,35 @@ function setSleepLoc(loc) { logS.sleep.location=loc; renderLogForm(); }
 
 function startGeoLoc() {
   if(logS.sleep.autoLoc) return;
-  if(!navigator.geolocation) { logS.sleep.autoLoc='Home'; renderLogForm(); return; }
+  if(!navigator.geolocation) { renderLogForm(); return; }
+  // Known locations [lat, lon, name] — update coords to match actual addresses
+  const KNOWN=[
+    [51.454, -0.978, 'Home'],   // Reading
+    [51.531, -0.124, 'Flat']    // Kings Cross, London
+  ];
+  function haversineKm(la1,lo1,la2,lo2){
+    const R=6371,r=Math.PI/180;
+    const dLa=(la2-la1)*r,dLo=(lo2-lo1)*r;
+    const a=Math.sin(dLa/2)**2+Math.cos(la1*r)*Math.cos(la2*r)*Math.sin(dLo/2)**2;
+    return R*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));
+  }
   navigator.geolocation.getCurrentPosition(
-    ()=>{logS.sleep.autoLoc='Home';if(!logS.sleep.location) logS.sleep.location='Home';renderLogForm();},
-    ()=>{logS.sleep.autoLoc='Home';if(!logS.sleep.location) logS.sleep.location='Home';renderLogForm();},
-    {timeout:3000}
+    pos=>{
+      const {latitude:la,longitude:lo}=pos.coords;
+      let best=null,bestDist=Infinity;
+      for(const [kla,klo,name] of KNOWN){
+        const d=haversineKm(la,lo,kla,klo);
+        if(d<bestDist){bestDist=d;best=name;}
+      }
+      // Auto-select if within 5 km of a known spot; otherwise leave blank (user picks)
+      if(bestDist<5){
+        logS.sleep.autoLoc=best;
+        if(!logS.sleep.location) logS.sleep.location=best;
+      }
+      renderLogForm();
+    },
+    ()=>{ renderLogForm(); }, // permission denied or timeout — don't force a value
+    {timeout:6000,maximumAge:120000}
   );
 }
 
@@ -1189,10 +1244,9 @@ async function saveLogEntry(sec) {
       if(res.records){toast('Hay fever saved ✓');logS.hay={sev:0,syms:[],notes:''};}
     } else if(sec==='fit') {
       if(!logS.fit.type){toast('Select exercise type');btn&&(btn.disabled=false,btn.textContent='Save entry');return;}
-      const dur=logS.fit.dur?parseInt(logS.fit.dur):null;
-      if(dur!==null&&(isNaN(dur)||dur<=0)){toast('Enter a valid duration');btn&&(btn.disabled=false,btn.textContent='Save entry');return;}
-      fields={Date:now,'Exercise Type':logS.fit.type};
-      if(dur) fields['Duration (mins)']=dur;
+      const dur=logS.fit.dur?parseInt(logS.fit.dur):45; // default 45 mins
+      if(isNaN(dur)||dur<=0){toast('Enter a valid duration');btn&&(btn.disabled=false,btn.textContent='Save entry');return;}
+      fields={Date:now,'Exercise Type':logS.fit.type,'Duration (mins)':dur};
       if(logS.fit.intensity) fields.Intensity=logS.fit.intensity;
       if(logS.fit.notes) fields.Notes=logS.fit.notes;
       res=await createRecord(TBLS.fit,fields);
@@ -1288,7 +1342,7 @@ function renderHistory() {
       if(k==='hay'){title=`Severity ${f.Severity}/5`;sub=[(f.Symptoms||[]).slice(0,3).join(', '),f.Notes].filter(Boolean).join(' · ');}
       if(k==='fit'){title=`${f['Exercise Type']||'Fitness'} · ${f['Duration (mins)']||0} min`;sub=[`Intensity ${f.Intensity}/5`,f.Notes].filter(Boolean).join(' · ');}
       if(k==='wb'){title=`Energy ${f.Energy}/5`;sub=f.Notes||'';}
-      html+=`<div class="hentry">
+      html+=`<div class="hentry hentry-tap" onclick="openEditSheet('${r.id}','${r._k}')">
         <div class="hicon" style="background:${m.c}18;color:${m.c}">${m.i}</div>
         <div style="flex:1;min-width:0">
           <div style="display:flex;justify-content:space-between;align-items:baseline">
@@ -1297,6 +1351,7 @@ function renderHistory() {
           </div>
           ${sub?`<div class="hentry-sub">${sub}</div>`:''}
         </div>
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--ink4)" stroke-width="2" stroke-linecap="round" style="flex-shrink:0;margin-left:4px"><polyline points="9 18 15 12 9 6"/></svg>
       </div>`;
     });
   }
@@ -1660,6 +1715,154 @@ async function composerSave() {
     silentRefresh();
   } catch(e){toast('Failed to save');}
   if(btn){btn.disabled=false;btn.textContent='Save to log';}
+}
+
+// ── EDIT ENTRY SHEET ──────────────────────────────────────
+let editState={id:'',kind:'',fields:{},_datetime:''};
+
+function openEditSheet(recId,kind) {
+  const arr=data[kind]||[];
+  const rec=arr.find(r=>r.id===recId);
+  if(!rec){toast('Entry not found');return;}
+  // Deep-copy fields (avoid mutating shared arrays like Flags/Symptoms)
+  const flds=Object.fromEntries(Object.entries(rec.fields).map(([k,v])=>[k,Array.isArray(v)?[...v]:v]));
+  const d=rec.fields.Date?new Date(rec.fields.Date):new Date();
+  const p=n=>String(n).padStart(2,'0');
+  const dt=`${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
+  editState={id:recId,kind,fields:flds,_datetime:dt};
+  const labels={bp:'Blood pressure',sleep:'Sleep',bw:'Bowels',hay:'Hay fever',fit:'Fitness',wb:'Energy'};
+  $('edit-title').textContent=labels[kind]||'Entry';
+  renderEditForm();
+  $('edit-sheet').classList.add('open');
+}
+function closeEditSheet(){$('edit-sheet').classList.remove('open');}
+
+function editSetScale(key,val){editState.fields[key]=val;renderEditForm();}
+function editSetVal(key,val){editState.fields[key]=val;renderEditForm();}
+function editToggleFlag(key,val){
+  const arr=editState.fields[key]||[];
+  const idx=arr.indexOf(val);
+  idx>-1?arr.splice(idx,1):arr.push(val);
+  editState.fields[key]=arr;
+  renderEditForm();
+}
+
+function renderEditForm(){
+  const f=editState.fields,kind=editState.kind;
+  const cboxSVG=`<svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round"><polyline points="2,6 5,9 10,3"/></svg>`;
+  let html='';
+  if(kind==='bp'){
+    html=`
+    <div class="sfield"><div class="slabel">Systolic</div><input class="sinput" type="number" value="${f.Systolic||''}" oninput="editState.fields.Systolic=this.value?parseInt(this.value):''"></div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+      <div class="sfield"><div class="slabel">Diastolic</div><input class="sinput" type="number" value="${f.Diastolic||''}" oninput="editState.fields.Diastolic=this.value?parseInt(this.value):''"></div>
+      <div class="sfield"><div class="slabel">Pulse</div><input class="sinput" type="number" value="${f.Pulse||''}" oninput="editState.fields.Pulse=this.value?parseInt(this.value):''"></div>
+    </div>
+    <div class="sfield"><div class="slabel">Notes</div><input class="sinput" value="${f.Notes||''}" oninput="editState.fields.Notes=this.value"></div>`;
+  } else if(kind==='sleep'){
+    html=`
+    <div class="sfield"><div class="slabel">Quality (1–5)</div>
+      <div class="scale-row">${[1,2,3,4,5].map(n=>`<button class="sbtn${f.Quality===n?' active':''}" onclick="editSetScale('Quality',${n})">${n}</button>`).join('')}</div>
+      <div class="scale-caps"><span>Awful</span><span>Restorative</span></div>
+    </div>
+    <div class="sfield"><div class="slabel">Where did you sleep?</div>
+      <div class="loc-grid">${SLEEP_LOCS.map(l=>`<button class="locbtn${f.Location===l?' active':''}" onclick="editSetVal('Location','${l}')">${l}</button>`).join('')}</div>
+    </div>
+    <div class="sfield"><div class="slabel">During the night</div>
+      <div class="check-list">${SLEEP_FLAGS.map(fl=>`
+        <button class="check-row${(f.Flags||[]).includes(fl)?' active':''}" onclick="editToggleFlag('Flags','${fl}')">
+          <span class="cbox">${(f.Flags||[]).includes(fl)?cboxSVG:''}</span><span>${fl}</span>
+        </button>`).join('')}
+      </div>
+    </div>
+    <div class="sfield"><div class="slabel">Notes</div><input class="sinput" value="${f.Notes||''}" oninput="editState.fields.Notes=this.value"></div>`;
+  } else if(kind==='bw'){
+    html=`
+    <div class="sfield"><div class="slabel">Consistency (Bristol scale)</div>
+      <div class="bristol-list">${[1,2,3,4,5,6,7,8].map(n=>{
+        const lbl=['Hard lumps','Lumpy sausage','Cracked sausage','Smooth sausage (ideal)','Soft blobs','Fluffy pieces','Watery','Urgent'][n-1];
+        const val=`Type ${n} - ${lbl}`;
+        return `<button class="brow${f.Consistency===val?' active':''}" onclick="editSetVal('Consistency',${JSON.stringify(val)})">
+          <span class="bcode${n===8?' danger':''}">T${n}</span>${lbl}
+        </button>`;
+      }).join('')}</div>
+    </div>
+    <div class="sfield"><div class="slabel">Notes</div><input class="sinput" value="${f.Notes||''}" oninput="editState.fields.Notes=this.value"></div>`;
+  } else if(kind==='hay'){
+    html=`
+    <div class="sfield"><div class="slabel">Severity (1–5)</div>
+      <div class="scale-row">${[1,2,3,4,5].map(n=>`<button class="sbtn${f.Severity===n?' active':''}" onclick="editSetScale('Severity',${n})">${n}</button>`).join('')}</div>
+    </div>
+    <div class="sfield"><div class="slabel">Symptoms</div>
+      <div class="chips-wrap">${HAY_SYMS.map(s=>`<button class="chip${(f.Symptoms||[]).includes(s)?' active':''}" onclick="editToggleFlag('Symptoms',${JSON.stringify(s)})">${s}</button>`).join('')}</div>
+    </div>
+    <div class="sfield"><div class="slabel">Notes</div><input class="sinput" value="${f.Notes||''}" oninput="editState.fields.Notes=this.value"></div>`;
+  } else if(kind==='fit'){
+    html=`
+    <div class="sfield"><div class="slabel">Type</div>
+      <div class="fit-grid">${FIT_TYPES.map(t=>`<button class="fitbtn${f['Exercise Type']===t?' active':''}" onclick="editSetVal('Exercise Type',${JSON.stringify(t)})">${t}</button>`).join('')}</div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+      <div class="sfield"><div class="slabel">Duration (mins)</div><input class="sinput" type="number" value="${f['Duration (mins)']||''}" oninput="editState.fields['Duration (mins)']=this.value?parseInt(this.value):''"></div>
+      <div class="sfield"><div class="slabel">Intensity (1–5)</div>
+        <div class="scale-row" style="gap:5px;margin-top:6px">${[1,2,3,4,5].map(n=>`<button class="sbtn${f.Intensity===n?' active':''}" style="min-width:30px" onclick="editSetScale('Intensity',${n})">${n}</button>`).join('')}</div>
+      </div>
+    </div>
+    <div class="sfield"><div class="slabel">Notes</div><input class="sinput" value="${f.Notes||''}" oninput="editState.fields.Notes=this.value"></div>`;
+  } else if(kind==='wb'){
+    html=`
+    <div class="sfield"><div class="slabel">Energy (1–5)</div>
+      <div class="scale-row">${[1,2,3,4,5].map(n=>`<button class="sbtn${f.Energy===n?' active':''}" onclick="editSetScale('Energy',${n})">${n}</button>`).join('')}</div>
+      <div class="scale-caps"><span>Drained</span><span>Excellent</span></div>
+    </div>
+    <div class="sfield"><div class="slabel">Notes</div><input class="sinput" value="${f.Notes||''}" oninput="editState.fields.Notes=this.value"></div>`;
+  }
+  html+=`<div class="sfield"><div class="slabel">Date &amp; Time</div><input type="datetime-local" class="sinput" value="${editState._datetime}" oninput="editState._datetime=this.value"></div>`;
+  $('edit-body').innerHTML=html;
+}
+
+async function saveEditEntry(){
+  const {id,kind,fields,_datetime}=editState;
+  const btn=$('edit-save-btn');
+  btn.disabled=true;btn.textContent='Saving…';
+  const dateISO=_datetime?new Date(_datetime).toISOString():fields.Date;
+  const upd={...fields,Date:dateISO};
+  // Remove empty strings (Airtable rejects them for numeric fields)
+  Object.keys(upd).forEach(k=>{if(upd[k]===''||upd[k]===undefined)delete upd[k];});
+  try {
+    await updateRecord(TBLS[kind],id,upd);
+    toast('Updated ✓');
+    // Update local data array so re-render is instant
+    const arr=data[kind]||[];
+    const idx=arr.findIndex(r=>r.id===id);
+    if(idx>-1) arr[idx]={...arr[idx],fields:upd};
+    closeEditSheet();
+    if(curPage==='today') renderToday();
+    else if(curPage==='history') renderHistory();
+    silentRefresh();
+  } catch(e){toast('Save failed: '+e.message);}
+  btn.disabled=false;btn.textContent='Save';
+}
+
+async function deleteEditEntry(){
+  const {id,kind}=editState;
+  const labels={bp:'BP reading',sleep:'sleep entry',bw:'bowel entry',hay:'hay fever entry',fit:'fitness entry',wb:'energy entry'};
+  if(!confirm(`Delete this ${labels[kind]||'entry'}?`)) return;
+  const btn=$('edit-delete-btn');
+  btn.disabled=true;btn.textContent='Deleting…';
+  try {
+    await atFetch(`${BASE}/${TBLS[kind]}/${id}`,{method:'DELETE'});
+    toast('Deleted');
+    // Remove from local array
+    const arr=data[kind]||[];
+    const idx=arr.findIndex(r=>r.id===id);
+    if(idx>-1) arr.splice(idx,1);
+    closeEditSheet();
+    if(curPage==='today') renderToday();
+    else if(curPage==='history') renderHistory();
+    silentRefresh();
+  } catch(e){toast('Failed to delete');}
+  btn.disabled=false;btn.textContent='Delete entry';
 }
 
 // ── SILENT REFRESH ────────────────────────────────────────
