@@ -696,7 +696,7 @@ function renderToday() {
   const todayFit = data.fit.filter(r=>r.fields.Date?.slice(0,10)===today).length;
   const todayMissed=(data.medlog||[]).filter(r=>r.fields.Date?.slice(0,10)===today&&r.fields.Status==='Missed').length;
   const sbadge=(n,meds=false)=>meds?(n>0?`<span class="status-badge warning">⚠ ${n} missed</span>`:`<span class="status-badge done">✓ All taken</span>`):(n>0?`<span class="status-badge done">✓ Logged</span>`:`<span class="status-badge pending">○ Not yet</span>`);
-  const LP=(tab)=>`onmousedown="startLP('${tab}',this)" onmouseup="cancelLP()" onmouseleave="cancelLP()" ontouchstart="startLP('${tab}',this);event.preventDefault()" ontouchend="cancelLP()" ontouchmove="cancelLP()"`;
+  const LP=(tab)=>`onmousedown="startLP('${tab}',this)" onmouseup="cancelLP()" onmouseleave="cancelLP()" ontouchstart="startLP('${tab}',this)" ontouchend="cancelLP()" ontouchmove="cancelLP()"`;
   const bpSys   = lastBP.Systolic || 0;
   const bpStatus = bpSys >= 140 ? {c:'var(--hi)',t:'Elevated'} : bpSys >= 130 ? {c:'var(--warn)',t:'Slightly high'} : {c:'var(--good)',t:'In range'};
   const hay7avg  = data.hay.slice(0,7).reduce((s,r)=>s+(r.fields.Severity||0),0) / Math.max(1,Math.min(7,data.hay.length));
