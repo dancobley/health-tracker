@@ -84,6 +84,10 @@ body{font-family:var(--f);color:var(--ink);font-variant-numeric:tabular-nums}
 .c-spin{width:18px;height:18px;border-radius:999px;border:2px solid var(--line);border-top-color:var(--accent);animation:spin .8s linear infinite;flex-shrink:0}
 @keyframes spin{to{transform:rotate(360deg)}}
 
+/* PAGE LOADING / ERROR STATES */
+.page-loading{display:flex;align-items:center;gap:10px;padding:28px 4px;font-size:13px;color:var(--ink3)}
+.page-error{padding:28px 4px;font-size:13px;color:var(--hi)}
+
 /* CARDS */
 .card{background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:14px;margin-bottom:10px}
 .card.hero{border-radius:20px;padding:18px 18px 10px}
@@ -205,6 +209,8 @@ body{font-family:var(--f);color:var(--ink);font-variant-numeric:tabular-nums}
 .med-tchip{font-size:11px;font-weight:500;padding:3px 8px;border-radius:999px;background:var(--as);color:var(--accent)}
 .med-pbtn{align-self:flex-start;padding:6px 12px;border-radius:999px;border:1px solid var(--line);background:transparent;color:var(--ink3);font-size:11px;font-weight:600;cursor:pointer;font-family:var(--f)}
 .med-pbtn.resume{border-color:var(--accent);background:var(--accent);color:#fff}
+.med-mbtn{font-size:11px;padding:4px 10px;border-radius:8px;border:1px solid var(--warn);background:transparent;color:var(--ink3);cursor:pointer;font-family:var(--f);font-weight:600;transition:all .15s}
+.med-mbtn.missed-done{background:rgba(231,138,31,.15);color:var(--warn);cursor:default}
 
 /* ADD MED SHEET */
 #add-med-sheet{position:absolute;inset:0;z-index:60;display:none}
@@ -427,6 +433,16 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid 
 </div><!-- /app -->
 
 <script>
+/*
+ * Dan's Health Log — single-file PWA.
+ * Data lives in Airtable (one table per measure, see TBLS); reads/writes go
+ * direct from the browser via atFetch. Voice/text notes are transcribed with
+ * Whisper then parsed to structured JSON by gpt-4o-mini (parseTranscript).
+ * All pages render into #page-* containers from the in-memory `data` cache;
+ * after any write, silentRefresh() re-pulls everything and re-renders.
+ * Day-bucketing always uses dayKey() (local timezone) — never slice ISO strings.
+ * API keys are __PLACEHOLDER__ substituted by build.sh at Netlify deploy time.
+ */
 // ── CONFIG ────────────────────────────────────────────────
 const AT_TOKEN = "__AT_TOKEN__";
 const OAI_KEY  = "__OAI_KEY__";
@@ -455,7 +471,6 @@ let curPage = 'today';
 let logTab = 'bp';
 let histRange = 30;
 let histFilter = 'all';
-let daySheetState = null;
 
 // Log form state
 const logS = {
@@ -475,11 +490,25 @@ const medS = {name:'',type:'Supplement',dose:'',frequency:'Once daily',times:[],
 let cState = 'idle'; // idle | recording | parsing | parsed
 let cText = '';
 let cParsed = null;
-let mediaRec = null, audioChunks = [], isRecording = false, waveTimer = null;
+let mediaRec = null, audioChunks = [], waveTimer = null;
 
 // ── HELPERS ───────────────────────────────────────────────
 const $ = id => document.getElementById(id);
 const pad = n => String(n).padStart(2,'0');
+// Escape for safe interpolation into HTML text and attribute values
+const esc = s => String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;');
+// Local-timezone YYYY-MM-DD key. Never slice ISO strings for day comparison:
+// records are stored as UTC, so a 23:30 BST entry would land on the wrong day.
+function dayKey(d) {
+  const dt=parseDate(d); if(!dt) return '';
+  return `${dt.getFullYear()}-${pad(dt.getMonth()+1)}-${pad(dt.getDate())}`;
+}
+const todayKey = () => dayKey(new Date());
+// Local datetime string in the format required by <input type="datetime-local">
+function nowLocalDT() {
+  const n=new Date();
+  return `${n.getFullYear()}-${pad(n.getMonth()+1)}-${pad(n.getDate())}T${pad(n.getHours())}:${pad(n.getMinutes())}`;
+}
 
 function setSync(s) {
   const d=$('sync-dot'),l=$('sync-label');
@@ -497,10 +526,6 @@ function parseDate(d) {
   // Prevent UTC midnight → off-by-one-day bug for date-only strings
   return typeof d==='string'&&d.length===10 ? new Date(d+'T00:00:00') : new Date(d);
 }
-function fmtDate(d) {
-  const dt=parseDate(d); if(!dt) return '—';
-  return dt.toLocaleDateString('en-GB',{weekday:'short',day:'numeric',month:'short',year:'numeric'}).toUpperCase();
-}
 function fmtDateShort(d) {
   const dt=parseDate(d); if(!dt) return '—';
   return dt.toLocaleDateString('en-GB',{day:'numeric',month:'short'});
@@ -517,11 +542,6 @@ function fmtRel(d) {
   if(diff < 24*60*60*1000) return 'today';
   if(diff < 48*60*60*1000) return 'yesterday';
   return fmtDateShort(d);
-}
-function localDateStr(d) {
-  if(!d) return '';
-  const dt = typeof d==='string'&&d.length===10 ? new Date(d+'T00:00:00') : new Date(d);
-  return dt.toISOString().slice(0,10);
 }
 function getGreeting() {
   const h = new Date().getHours();
@@ -649,7 +669,7 @@ function navTo(page, el) {
 // ── TODAY / DASHBOARD ─────────────────────────────────────
 async function loadToday() {
   setSync('busy');
-  $('page-today').innerHTML = '<div style="padding:20px;font-size:13px;color:var(--ink3)">Loading…</div>';
+  $('page-today').innerHTML = '<div class="page-loading"><div class="c-spin"></div>Loading…</div>';
   try {
     const [bpR,bwR,hayR,fitR,wbR,slpR,medR,mlogR] = await Promise.all([
       getAllRecords(TBLS.bp), getAllRecords(TBLS.bw), getAllRecords(TBLS.hay),
@@ -665,7 +685,7 @@ async function loadToday() {
     setSync('ok');
   } catch(e) {
     setSync('err');
-    $('page-today').innerHTML = '<div style="padding:20px;font-size:13px;color:var(--hi)">Failed to load data</div>';
+    $('page-today').innerHTML = '<div class="page-error">Failed to load data — check your connection and try again</div>';
   }
 }
 
@@ -686,15 +706,14 @@ function renderToday() {
   const lastWB  = data.wb[0]?.fields || {};
   const lastHay = data.hay[0]?.fields || {};
   const lastSlp = data.sleep[0]?.fields || null;
-  const now     = new Date();
-  const today   = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}`;
-  const todayBW  = data.bw.filter(r=>r.fields.Date&&r.fields.Date.slice(0,10)===today).length;
-  const todayBP  = data.bp.filter(r=>r.fields.Date?.slice(0,10)===today).length;
-  const todaySleep=data.sleep.filter(r=>r.fields.Date?.slice(0,10)===today).length;
-  const todayHay = data.hay.filter(r=>r.fields.Date?.slice(0,10)===today).length;
-  const todayWB  = data.wb.filter(r=>r.fields.Date?.slice(0,10)===today).length;
-  const todayFit = data.fit.filter(r=>r.fields.Date?.slice(0,10)===today).length;
-  const todayMissed=(data.medlog||[]).filter(r=>r.fields.Date?.slice(0,10)===today&&r.fields.Status==='Missed').length;
+  const today    = todayKey();
+  const cntToday = arr=>arr.filter(r=>dayKey(r.fields.Date)===today).length;
+  const todayBW  = cntToday(data.bw);
+  const todayBP  = cntToday(data.bp);
+  const todaySleep=cntToday(data.sleep);
+  const todayHay = cntToday(data.hay);
+  const todayWB  = cntToday(data.wb);
+  const todayMissed=(data.medlog||[]).filter(r=>dayKey(r.fields.Date)===today&&r.fields.Status==='Missed').length;
   const sbadge=(n,meds=false)=>meds?(n>0?`<span class="status-badge warning">⚠ ${n} missed</span>`:`<span class="status-badge done">✓ All taken</span>`):(n>0?`<span class="status-badge done">✓ Logged</span>`:`<span class="status-badge pending">○ Not yet</span>`);
   const LP=(tab)=>`onmousedown="startLP('${tab}',this)" onmouseup="cancelLP()" onmouseleave="cancelLP()" ontouchstart="startLP('${tab}',this)" ontouchend="cancelLP()" ontouchmove="cancelLP()"`;
   const bpSys   = lastBP.Systolic || 0;
@@ -802,8 +821,8 @@ function renderToday() {
     ${activeMeds.map(m=>`
     <div class="dash-med-row">
       <div>
-        <div style="font-size:13px;font-weight:600;color:var(--ink)">${m.fields.Name}</div>
-        <div style="font-size:11px;color:var(--ink3)">${m.fields.Dose||''} · ${m.fields.Frequency||''}</div>
+        <div style="font-size:13px;font-weight:600;color:var(--ink)">${esc(m.fields.Name)}</div>
+        <div style="font-size:11px;color:var(--ink3)">${esc(m.fields.Dose||'')} · ${esc(m.fields.Frequency||'')}</div>
       </div>
       <div style="font-size:11px;color:var(--ink3);align-self:center">${(Array.isArray(m.fields['Time of Day'])?m.fields['Time of Day']:[]).join(' · ')}</div>
     </div>`).join('')}
@@ -874,7 +893,7 @@ function renderSleepBars(recs) {
     const q=r.fields.Quality||1;
     const h=15+q*17;
     const bg=q>=4?'#6E5BD8':q>=3?'#9B8DE6':'#C7BEEF';
-    const key=r.fields.Date?.slice(0,10)||'';
+    const key=dayKey(r.fields.Date);
     return `<button data-type="sleep" data-daykey="${key}" style="width:12px;flex-shrink:0;height:${h}%;background:${bg};border-radius:2px 2px 0 0;border:none;cursor:pointer" title="${fmtDateShort(r.fields.Date)} · ${q}/5"></button>`;
   }).join('');
   return `<div class="bars-wrap" id="slp-bars-wrap" style="height:36px"><div class="bars-inner" style="height:100%;align-items:flex-end">${bars}</div></div>`;
@@ -885,7 +904,7 @@ function renderMiniBars(recs, type) {
   if(!arr.length) return '';
   const bars=arr.map(r=>{
     const v=type==='hay'?(r.fields.Severity||0):(r.fields.Energy||0);
-    const h=v*20;const key=r.fields.Date?.slice(0,10)||'';
+    const h=v*20;const key=dayKey(r.fields.Date);
     const bg=type==='hay'?`rgba(216,65,58,${0.15+v*0.15})`:`rgba(30,79,232,0.6)`;
     return `<button data-type="${type}" data-daykey="${key}" style="width:12px;flex-shrink:0;height:${h}%;min-height:4px;background:${bg};border-radius:2px;border:none;cursor:pointer" title="${fmtDateShort(r.fields.Date)} · ${v}/5"></button>`;
   }).join('');
@@ -893,14 +912,15 @@ function renderMiniBars(recs, type) {
   return `<div class="bars-wrap" id="${wrapId}" style="height:22px"><div class="bars-inner" style="height:100%;align-items:flex-end">${bars}</div></div>`;
 }
 
+// Two-row heatmap: frequency (top) + worst Bristol type (bottom) per day
 function renderBowelHeatmap(recs,scrollId='bowel-scroll',days=60) {
   const byDay={};
-  recs.forEach(r=>{const k=r.fields.Date?.slice(0,10);if(k){if(!byDay[k])byDay[k]=[];byDay[k].push(r);}});
+  recs.forEach(r=>{const k=dayKey(r.fields.Date);if(k){if(!byDay[k])byDay[k]=[];byDay[k].push(r);}});
   const today=new Date();
   const items=[];
   for(let i=days-1;i>=0;i--){
     const d=new Date(today);d.setDate(d.getDate()-i);
-    const key=`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+    const key=dayKey(d);
     const entries=byDay[key]||[];
     const count=entries.length;
     items.push(`<div style="font-size:8px;font-weight:600;color:var(--ink3);text-align:center;line-height:1.2">${d.getDate()}</div>`);
@@ -980,7 +1000,7 @@ function renderFitnessChart(recs,days=30) {
   const {start,end}=chartRange(days);
   const byDay={};
   recs.filter(r=>{const d=parseDate(r.fields.Date);return d&&d>=start&&d<=end;})
-    .forEach(r=>{const k=r.fields.Date?.slice(0,10);if(!k)return;if(!byDay[k])byDay[k]={mins:0,intensities:[]};byDay[k].mins+=(r.fields['Duration (mins)']||0);if(r.fields.Intensity)byDay[k].intensities.push(r.fields.Intensity);});
+    .forEach(r=>{const k=dayKey(r.fields.Date);if(!k)return;if(!byDay[k])byDay[k]={mins:0,intensities:[]};byDay[k].mins+=(r.fields['Duration (mins)']||0);if(r.fields.Intensity)byDay[k].intensities.push(r.fields.Intensity);});
   const arr=Object.keys(byDay).sort().map(k=>({date:k,mins:byDay[k].mins,intensity:byDay[k].intensities.length?byDay[k].intensities.reduce((a,b)=>a+b,0)/byDay[k].intensities.length:null}));
   if(!arr.length) return '<div style="height:80px;display:flex;align-items:center;justify-content:center;font-size:12px;color:var(--ink4)">No fitness data in this period</div>';
   const H=140,P=10,BOT=32,VW=360;
@@ -1034,10 +1054,7 @@ function renderLog() {
 
 function switchLogTab(tab) {
   logTab=tab;
-  // Reset datetime to now when switching tabs
-  const _n=new Date();
-  const _p=n=>String(n).padStart(2,'0');
-  logS.datetime=`${_n.getFullYear()}-${_p(_n.getMonth()+1)}-${_p(_n.getDate())}T${_p(_n.getHours())}:${_p(_n.getMinutes())}`;
+  logS.datetime=nowLocalDT(); // each tab starts at "now"; user can backdate
   const tabIds=['bp','sleep','bw','hay','fit','wb'];
   document.querySelectorAll('#log-tabs .log-tab').forEach((t,i)=>{
     t.classList.toggle('active',tabIds[i]===tab);
@@ -1050,12 +1067,11 @@ function renderLogForm() {
   const el=$('log-form');
   if(!el) return;
   // Ensure datetime is set (first open before any switchLogTab call)
-  if(!logS.datetime){const _n=new Date();const _p=n=>String(n).padStart(2,'0');logS.datetime=`${_n.getFullYear()}-${_p(_n.getMonth()+1)}-${_p(_n.getDate())}T${_p(_n.getHours())}:${_p(_n.getMinutes())}`;}
+  if(!logS.datetime) logS.datetime=nowLocalDT();
   const dtField=`<div class="lfield"><div class="llabel">Date &amp; Time</div><input type="datetime-local" class="linput" value="${logS.datetime}" oninput="logS.datetime=this.value"></div>`;
   // Logged today badge
-  const _tn=new Date();
-  const _td=`${_tn.getFullYear()}-${String(_tn.getMonth()+1).padStart(2,'0')}-${String(_tn.getDate()).padStart(2,'0')}`;
-  const _cnt=(data[logTab]||[]).filter(r=>r.fields.Date?.slice(0,10)===_td).length;
+  const _td=todayKey();
+  const _cnt=(data[logTab]||[]).filter(r=>dayKey(r.fields.Date)===_td).length;
   const logBadge=_cnt>0
     ?`<div style="margin-bottom:14px;display:flex;align-items:center;gap:8px"><span class="status-badge done">✓ Logged today</span><span style="font-size:11px;color:var(--ink3)">${_cnt} entr${_cnt===1?'y':'ies'}</span></div>`
     :`<div style="margin-bottom:14px"><span class="status-badge pending">○ Not yet logged today</span></div>`;
@@ -1070,7 +1086,7 @@ function renderLogForm() {
       </div>
       <div class="g3-sub"><span>SYSTOLIC</span><span>DIASTOLIC</span><span>PULSE</span></div>
     </div>
-    <div class="lfield"><div class="llabel">Notes</div><input class="linput" id="log-bp-notes" placeholder="optional…" value="${logS.bp.notes}" oninput="logS.bp.notes=this.value"></div>
+    <div class="lfield"><div class="llabel">Notes</div><input class="linput" id="log-bp-notes" placeholder="optional…" value="${esc(logS.bp.notes)}" oninput="logS.bp.notes=this.value"></div>
     ${dtField}<button class="btn-save" onclick="saveLogEntry('bp')">Save entry</button>`;
   } else if(logTab==='sleep') {
     html=`
@@ -1095,7 +1111,7 @@ function renderLogForm() {
         <span id="geo-status">${logS.sleep.autoLoc?`From device location: <strong>${logS.sleep.autoLoc}</strong>`:'Detecting location…'}</span>
       </div>
     </div>
-    <div class="lfield"><div class="llabel">Notes</div><input class="linput" id="log-sleep-notes" placeholder="dreams, wake-ups, anything else…" value="${logS.sleep.notes}" oninput="logS.sleep.notes=this.value"></div>
+    <div class="lfield"><div class="llabel">Notes</div><input class="linput" id="log-sleep-notes" placeholder="dreams, wake-ups, anything else…" value="${esc(logS.sleep.notes)}" oninput="logS.sleep.notes=this.value"></div>
     ${dtField}<button class="btn-save" onclick="saveLogEntry('sleep')">Save entry</button>`;
   } else if(logTab==='bw') {
     html=`
@@ -1108,7 +1124,7 @@ function renderLogForm() {
         </button>`;
       }).join('')}</div>
     </div>
-    <div class="lfield"><div class="llabel">Notes</div><input class="linput" id="log-bw-notes" placeholder="context, timing, anything else…" value="${logS.bw.notes}" oninput="logS.bw.notes=this.value"></div>
+    <div class="lfield"><div class="llabel">Notes</div><input class="linput" id="log-bw-notes" placeholder="context, timing, anything else…" value="${esc(logS.bw.notes)}" oninput="logS.bw.notes=this.value"></div>
     ${dtField}<button class="btn-save" onclick="saveLogEntry('bw')">Save entry</button>`;
   } else if(logTab==='hay') {
     html=`
@@ -1118,7 +1134,7 @@ function renderLogForm() {
     <div class="lfield"><div class="llabel">Symptoms</div>
       <div class="chips-wrap">${HAY_SYMS.map(s=>`<button class="chip${logS.hay.syms.includes(s)?' active':''}" onclick="toggleSym('hay','syms','${s}')">${s}</button>`).join('')}</div>
     </div>
-    <div class="lfield"><div class="llabel">Notes</div><input class="linput" id="log-hay-notes" placeholder="triggers, location, anything else…" value="${logS.hay.notes}" oninput="logS.hay.notes=this.value"></div>
+    <div class="lfield"><div class="llabel">Notes</div><input class="linput" id="log-hay-notes" placeholder="triggers, location, anything else…" value="${esc(logS.hay.notes)}" oninput="logS.hay.notes=this.value"></div>
     ${dtField}<button class="btn-save" onclick="saveLogEntry('hay')">Save entry</button>`;
   } else if(logTab==='fit') {
     html=`
@@ -1129,7 +1145,7 @@ function renderLogForm() {
     <div class="lfield"><div class="llabel">Intensity</div>
       <div class="scale-row">${[1,2,3,4,5].map(n=>`<button class="sbtn${logS.fit.intensity===n?' active':''}" onclick="setScale('fit','intensity',${n})">${n}</button>`).join('')}</div>
     </div>
-    <div class="lfield"><div class="llabel">Notes</div><input class="linput" id="log-fit-notes" placeholder="how did it feel?" value="${logS.fit.notes}" oninput="logS.fit.notes=this.value"></div>
+    <div class="lfield"><div class="llabel">Notes</div><input class="linput" id="log-fit-notes" placeholder="how did it feel?" value="${esc(logS.fit.notes)}" oninput="logS.fit.notes=this.value"></div>
     ${dtField}<button class="btn-save" onclick="saveLogEntry('fit')">Save entry</button>`;
   } else if(logTab==='wb') {
     html=`
@@ -1137,7 +1153,7 @@ function renderLogForm() {
       <div class="scale-row">${[1,2,3,4,5].map(n=>`<button class="sbtn${logS.wb.energy===n?' active':''}" onclick="setScale('wb','energy',${n})">${n}</button>`).join('')}</div>
       <div class="scale-caps"><span>Drained</span><span>Excellent</span></div>
     </div>
-    <div class="lfield"><div class="llabel">Notes</div><input class="linput" id="log-wb-notes" placeholder="how are you feeling?" value="${logS.wb.notes}" oninput="logS.wb.notes=this.value"></div>
+    <div class="lfield"><div class="llabel">Notes</div><input class="linput" id="log-wb-notes" placeholder="how are you feeling?" value="${esc(logS.wb.notes)}" oninput="logS.wb.notes=this.value"></div>
     ${dtField}<button class="btn-save" onclick="saveLogEntry('wb')">Save entry</button>`;
   }
   el.innerHTML=logBadge+html;
@@ -1201,8 +1217,9 @@ async function saveLogEntry(sec) {
   try {
     let fields={},res;
     if(sec==='bp') {
-      if(!logS.bp.sys){toast('Enter systolic BP');btn&&(btn.disabled=false,btn.textContent='Save entry');return;}
-      fields={Date:now,Systolic:parseInt(logS.bp.sys)};
+      const sys=parseInt(logS.bp.sys);
+      if(!sys||sys<40||sys>300){toast('Enter a valid systolic BP');btn&&(btn.disabled=false,btn.textContent='Save entry');return;}
+      fields={Date:now,Systolic:sys};
       if(logS.bp.dia) fields.Diastolic=parseInt(logS.bp.dia);
       if(logS.bp.pulse) fields.Pulse=parseInt(logS.bp.pulse);
       if(logS.bp.notes) fields.Notes=logS.bp.notes;
@@ -1215,9 +1232,9 @@ async function saveLogEntry(sec) {
       if(logS.sleep.flags.length) fields.Flags=logS.sleep.flags;
       if(logS.sleep.location) fields.Location=logS.sleep.location;
       if(logS.sleep.notes) fields.Notes=logS.sleep.notes;
-      // Check for existing sleep entry today
-      const todayStr=now.slice(0,10);
-      const existing=data.sleep.find(r=>r.fields.Date&&r.fields.Date.slice(0,10)===todayStr);
+      // One sleep entry per day: offer to overwrite if the chosen day already has one
+      const dk=dayKey(now);
+      const existing=data.sleep.find(r=>dayKey(r.fields.Date)===dk);
       if(existing) {
         btn&&(btn.disabled=false,btn.textContent='Save entry');
         if(!confirm('Sleep already recorded for today — overwrite it?')) return;
@@ -1258,8 +1275,9 @@ async function saveLogEntry(sec) {
       res=await createRecord(TBLS.wb,fields);
       if(res.records){toast('Wellbeing saved ✓');logS.wb={energy:0,notes:''};}
     }
-    if(res&&!res.records) toast('Error: '+(res.error||'unknown'));
-    else silentRefresh();
+    // createRecord returns {records}, updateRecord returns {id}
+    if(res&&!res.records&&!res.id) toast('Error: '+(res.error||'unknown'));
+    else if(res){logS.datetime=nowLocalDT();silentRefresh();}
   } catch(e){toast('Save failed: '+e.message);}
   if(btn){btn.disabled=false;btn.textContent='Save entry';}
   renderLogForm();
@@ -1267,7 +1285,7 @@ async function saveLogEntry(sec) {
 
 // ── HISTORY ───────────────────────────────────────────────
 async function loadHistory() {
-  $('page-history').innerHTML='<div style="padding:20px;font-size:13px;color:var(--ink3)">Loading…</div>';
+  $('page-history').innerHTML='<div class="page-loading"><div class="c-spin"></div>Loading…</div>';
   try {
     const [bpR,bwR,hayR,fitR,wbR,slpR]=await Promise.all([
       getAllRecords(TBLS.bp),getAllRecords(TBLS.bw),getAllRecords(TBLS.hay),
@@ -1276,7 +1294,7 @@ async function loadHistory() {
     ]);
     data.bp=bpR;data.bw=bwR;data.hay=hayR;data.fit=fitR;data.wb=wbR;data.sleep=slpR;
     renderHistory();
-  } catch(e){$('page-history').innerHTML='<div style="padding:20px;font-size:13px;color:var(--hi)">Failed to load</div>';}
+  } catch(e){$('page-history').innerHTML='<div class="page-error">Failed to load — check your connection and try again</div>';}
 }
 
 function renderHistory() {
@@ -1336,12 +1354,13 @@ function renderHistory() {
       const dayLbl=parseDate(f.Date).toLocaleDateString('en-GB',{weekday:'long',day:'numeric',month:'long',year:'numeric'}).toUpperCase();
       if(dayLbl!==prevDay){html+=`<div class="hist-day-lbl">${dayLbl}</div>`;prevDay=dayLbl;}
       let title='',sub='';
-      if(k==='bp'){title=`${f.Systolic}/${f.Diastolic} mmHg`;sub=`pulse ${f.Pulse}${f.Notes?' · '+f.Notes:''}`;}
-      if(k==='sleep'){title=`Quality ${f.Quality}/5`;sub=[f.Location&&'📍 '+f.Location,...(f.Flags||[]),f.Notes].filter(Boolean).join(' · ');}
+      if(k==='bp'){title=`${f.Systolic??'—'}/${f.Diastolic??'—'} mmHg`;sub=`pulse ${f.Pulse??'—'}${f.Notes?' · '+f.Notes:''}`;}
+      if(k==='sleep'){title=`Quality ${f.Quality??'—'}/5`;sub=[f.Location&&'📍 '+f.Location,...(f.Flags||[]),f.Notes].filter(Boolean).join(' · ');}
       if(k==='bw'){title=f.Consistency||'Bowel entry';sub=f.Notes||'';}
-      if(k==='hay'){title=`Severity ${f.Severity}/5`;sub=[(f.Symptoms||[]).slice(0,3).join(', '),f.Notes].filter(Boolean).join(' · ');}
-      if(k==='fit'){title=`${f['Exercise Type']||'Fitness'} · ${f['Duration (mins)']||0} min`;sub=[`Intensity ${f.Intensity}/5`,f.Notes].filter(Boolean).join(' · ');}
-      if(k==='wb'){title=`Energy ${f.Energy}/5`;sub=f.Notes||'';}
+      if(k==='hay'){title=`Severity ${f.Severity??'—'}/5`;sub=[(f.Symptoms||[]).slice(0,3).join(', '),f.Notes].filter(Boolean).join(' · ');}
+      if(k==='fit'){title=`${f['Exercise Type']||'Fitness'} · ${f['Duration (mins)']||0} min`;sub=[f.Intensity&&`Intensity ${f.Intensity}/5`,f.Notes].filter(Boolean).join(' · ');}
+      if(k==='wb'){title=`Energy ${f.Energy??'—'}/5`;sub=f.Notes||'';}
+      title=esc(title);sub=esc(sub);
       html+=`<div class="hentry hentry-tap" onclick="openEditSheet('${r.id}','${r._k}')">
         <div class="hicon" style="background:${m.c}18;color:${m.c}">${m.i}</div>
         <div style="flex:1;min-width:0">
@@ -1364,34 +1383,35 @@ function setHistFilter(v){histFilter=v;renderHistory();}
 
 // ── MEDS ──────────────────────────────────────────────────
 async function loadMeds() {
-  $('page-meds').innerHTML='<div style="padding:20px;font-size:13px;color:var(--ink3)">Loading…</div>';
+  $('page-meds').innerHTML='<div class="page-loading"><div class="c-spin"></div>Loading…</div>';
   try {
     const recs=await getAllRecords(TBLS.med, '');
     data.med=recs.filter(r=>r.fields.Name);
     renderMeds();
-  } catch(e){$('page-meds').innerHTML='<div style="padding:20px;font-size:13px;color:var(--hi)">Failed to load</div>';}
+  } catch(e){$('page-meds').innerHTML='<div class="page-error">Failed to load — check your connection and try again</div>';}
 }
 
 function renderMeds() {
   const active=data.med.filter(m=>m.fields.Active);
   const inactive=data.med.filter(m=>!m.fields.Active);
-  const now=new Date();
-  const today=`${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}`;
-  const missedToday=new Set((data.medlog||[]).filter(r=>r.fields.Date?.slice(0,10)===today&&r.fields.Status==='Missed').map(r=>r.fields['Med Name']));
-  const medCard=m=>`
+  const today=todayKey();
+  const missedToday=new Set((data.medlog||[]).filter(r=>dayKey(r.fields.Date)===today&&r.fields.Status==='Missed').map(r=>r.fields['Med Name']));
+  const medCard=m=>{
+    const missed=missedToday.has(m.fields.Name);
+    return `
   <div class="med-card${m.fields.Active?'':' inactive'}">
     <div style="flex:1">
-      <div class="med-card-name">${m.fields.Name}</div>
-      <div class="med-card-sub">${m.fields.Dose||''}${m.fields.Dose&&m.fields.Frequency?' · ':''}${m.fields.Frequency||''}</div>
+      <div class="med-card-name">${esc(m.fields.Name)}</div>
+      <div class="med-card-sub">${esc(m.fields.Dose||'')}${m.fields.Dose&&m.fields.Frequency?' · ':''}${esc(m.fields.Frequency||'')}</div>
       ${(Array.isArray(m.fields['Time of Day'])&&m.fields['Time of Day'].length)?
         `<div class="med-card-times">${m.fields['Time of Day'].map(t=>`<span class="med-tchip">${t}</span>`).join('')}</div>`:''
       }
     </div>
     <div style="display:flex;flex-direction:column;gap:5px;align-items:flex-end">
-      ${m.fields.Active?`<button class="med-mbtn${missedToday.has(m.fields.Name)?' missed-done':''}" onclick="logMedMissed('${m.fields.Name.replace(/'/g,"\\'")}',this)" ${missedToday.has(m.fields.Name)?'disabled':''} style="font-size:11px;padding:4px 10px;border-radius:8px;border:1px solid var(--warn);background:${missedToday.has(m.fields.Name)?'rgba(231,138,31,.15)':'transparent'};color:${missedToday.has(m.fields.Name)?'var(--warn)':'var(--ink3)'};cursor:${missedToday.has(m.fields.Name)?'default':'pointer'};font-family:var(--f);font-weight:600">${missedToday.has(m.fields.Name)?'✓ Missed':'Missed'}</button>`:''}
+      ${m.fields.Active?`<button class="med-mbtn${missed?' missed-done':''}" data-med="${esc(m.fields.Name)}" onclick="logMedMissed(this.dataset.med,this)" ${missed?'disabled':''}>${missed?'✓ Missed':'Missed'}</button>`:''}
       <button class="med-pbtn${m.fields.Active?'':' resume'}" onclick="toggleMedActive('${m.id}',${!m.fields.Active})">${m.fields.Active?'Pause':'Resume'}</button>
     </div>
-  </div>`;
+  </div>`;};
   $('page-meds').innerHTML=`
   <div class="meds-header">
     <div class="meds-title">Medications</div>
@@ -1415,13 +1435,14 @@ async function logMedMissed(medName,btn) {
   try {
     await createRecord(TBLS.medlog,{Date:now,'Med Name':medName,Status:'Missed'});
     toast(`${medName} marked as missed`);
-    silentRefresh();
-    // Re-render meds so button updates
-    const today=now.slice(0,10);
+    // Optimistic local update so the button flips immediately; silentRefresh reconciles
     data.medlog=(data.medlog||[]).concat([{fields:{Date:now,'Med Name':medName,Status:'Missed'}}]);
     renderMeds();
-  } catch(e){toast('Failed to log missed med');}
-  if(btn){btn.disabled=false;btn.textContent='Missed';}
+    silentRefresh();
+  } catch(e){
+    toast('Failed to log missed med');
+    if(btn){btn.disabled=false;btn.textContent='Missed';}
+  }
 }
 
 // ── ADD MED SHEET ─────────────────────────────────────────
@@ -1475,14 +1496,13 @@ async function saveMed() {
 
 // ── DAY DETAIL SHEET ──────────────────────────────────────
 function openDaySheet({type,dateKey}) {
-  daySheetState={type,dateKey};
   const dateLabel=parseDate(dateKey).toLocaleDateString('en-GB',{weekday:'long',day:'numeric',month:'long'});
   const focus={hay:{c:'var(--hi)',l:'Hay fever'},wb:{c:'var(--pink)',l:'Energy'},bw:{c:'var(--warn)',l:'Bowels'},sleep:{c:'var(--sleep)',l:'Sleep'},bp:{c:'var(--accent)',l:'Blood pressure'}}[type]||{c:'var(--accent)',l:'Entry'};
   $('day-focus-lbl').textContent=`${focus.l} · Day detail`;
   $('day-focus-lbl').style.color=focus.c;
   $('day-date-lbl').textContent=dateLabel;
 
-  const ef=arr=>(arr||[]).filter(r=>r.fields.Date?.slice(0,10)===dateKey);
+  const ef=arr=>(arr||[]).filter(r=>dayKey(r.fields.Date)===dateKey);
   const bpD=ef(data.bp),bwD=ef(data.bw),hayD=ef(data.hay),fitD=ef(data.fit),wbD=ef(data.wb),slpD=ef(data.sleep);
 
   const section=(title,color,items,empty)=>`
@@ -1490,7 +1510,7 @@ function openDaySheet({type,dateKey}) {
     <div class="dsec-title" style="color:${color}">${title}</div>
     ${empty?'<div class="dempty">No entries</div>':items}
   </div>`;
-  const row=(k,v,note='')=>`<div class="drow"><div class="drow-kv"><span class="drow-k">${k}</span><span class="drow-v">${v}</span></div>${note?`<div class="drow-note">"${note}"</div>`:''}</div>`;
+  const row=(k,v,note='')=>`<div class="drow"><div class="drow-kv"><span class="drow-k">${k}</span><span class="drow-v">${v}</span></div>${note?`<div class="drow-note">"${esc(note)}"</div>`:''}</div>`;
 
   $('day-content').innerHTML=[
     section(`Hay fever · ${hayD.length||'none'}`,'var(--hi)',hayD.map(h=>row(`Severity ${h.fields.Severity}/5`,(h.fields.Symptoms||[]).join(', '),h.fields.Notes)).join(''),!hayD.length),
@@ -1607,7 +1627,7 @@ async function startVoice() {
     mediaRec.ondataavailable=e=>{if(e.data.size>0)audioChunks.push(e.data);};
     mediaRec.onstop=processAudio;
     mediaRec.start(200);
-    isRecording=true; cState='recording'; cText='';
+    cState='recording'; cText='';
     updateComposerUI();
     waveTimer=setInterval(()=>{
       document.querySelectorAll('.c-wave-b').forEach(b=>{b.style.height=(4+Math.random()*14)+'px';});
@@ -1618,7 +1638,7 @@ async function stopVoice() {
   if(!mediaRec||mediaRec.state==='inactive') return;
   clearInterval(waveTimer);
   try { mediaRec.stop(); } finally { mediaRec.stream.getTracks().forEach(t=>t.stop()); }
-  isRecording=false; cState='parsing'; updateComposerUI();
+  cState='parsing'; updateComposerUI();
 }
 function getSupportedMime(){
   const t=['audio/webm;codecs=opus','audio/webm','audio/ogg;codecs=opus','audio/mp4'];
@@ -1643,25 +1663,21 @@ async function processAudio() {
 }
 
 async function parseTranscript(transcript) {
-  const now=new Date().toISOString();
-  const sys=`You are a health data parser. Extract health data from a spoken or typed note and return ONLY valid JSON.
-Now: ${now}. The user is in London, UK.
-
-Return a JSON object with any of these top-level keys that are present:
-{
-  "bp": { "systolic": number, "diastolic": number, "pulse": number, "notes": string },
-  "bowel": { "consistency": one of exactly ["Type 1 - Hard lumps","Type 2 - Lumpy sausage","Type 3 - Cracked sausage","Type 4 - Smooth sausage (ideal)","Type 5 - Soft blobs","Type 6 - Fluffy pieces","Type 7 - Watery","Type 8 - Urgent"], "notes": string },
-  "hayfever": { "severity": integer 1-5, "symptoms": array from ["Sneezing","Runny nose","Itchy nose","Itchy eyes","Blocked nose","Itchy throat","Watery eyes","Headache"], "notes": string },
-  "fitness": { "exerciseType": one of ["Running","Cycling","Weights","Badminton","Hiking","Turbo","Circuits","Other"], "durationMins": number, "intensity": integer 1-5, "notes": string },
-  "wellbeing": { "energy": integer 1-5, "notes": string },
-  "sleep": { "quality": integer 1-5, "flags": array from ["Too hot/cold","Needed to go to the loo","Went to the loo"], "location": one of ["Home","Flat","Away"], "notes": string }
-}
-Only include keys actually mentioned. Return raw JSON only, no markdown.`;
+  // Option lists come from the app constants so the parser can never emit a
+  // value the forms/Airtable selects don't recognise.
+  const BRISTOL=['Hard lumps','Lumpy sausage','Cracked sausage','Smooth sausage (ideal)','Soft blobs','Fluffy pieces','Watery','Urgent'].map((l,i)=>`Type ${i+1} - ${l}`);
+  const sys=`Extract health data from a note. Return ONLY JSON with the top-level keys actually mentioned:
+{"bp":{"systolic":n,"diastolic":n,"pulse":n,"notes":s},
+"bowel":{"consistency":one of ${JSON.stringify(BRISTOL)},"notes":s},
+"hayfever":{"severity":1-5,"symptoms":from ${JSON.stringify(HAY_SYMS)},"notes":s},
+"fitness":{"exerciseType":one of ${JSON.stringify(FIT_TYPES)},"durationMins":n,"intensity":1-5,"notes":s},
+"wellbeing":{"energy":1-5,"notes":s},
+"sleep":{"quality":1-5,"flags":from ${JSON.stringify(SLEEP_FLAGS)},"location":one of ${JSON.stringify(SLEEP_LOCS)},"notes":s}}`;
   try {
     const r=await fetch('https://api.openai.com/v1/chat/completions',{
       method:'POST',
       headers:{'Content-Type':'application/json','Authorization':`Bearer ${OAI_KEY}`},
-      body:JSON.stringify({model:'gpt-4o',max_tokens:600,response_format:{type:'json_object'},messages:[{role:'system',content:sys},{role:'user',content:transcript}]})
+      body:JSON.stringify({model:'gpt-4o-mini',max_tokens:600,response_format:{type:'json_object'},messages:[{role:'system',content:sys},{role:'user',content:transcript}]})
     });
     const d=await r.json();
     if(!r.ok) throw new Error(d.error?.message||'OpenAI error');
@@ -1727,8 +1743,7 @@ function openEditSheet(recId,kind) {
   // Deep-copy fields (avoid mutating shared arrays like Flags/Symptoms)
   const flds=Object.fromEntries(Object.entries(rec.fields).map(([k,v])=>[k,Array.isArray(v)?[...v]:v]));
   const d=rec.fields.Date?new Date(rec.fields.Date):new Date();
-  const p=n=>String(n).padStart(2,'0');
-  const dt=`${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
+  const dt=`${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
   editState={id:recId,kind,fields:flds,_datetime:dt};
   const labels={bp:'Blood pressure',sleep:'Sleep',bw:'Bowels',hay:'Hay fever',fit:'Fitness',wb:'Energy'};
   $('edit-title').textContent=labels[kind]||'Entry';
@@ -1758,7 +1773,7 @@ function renderEditForm(){
       <div class="sfield"><div class="slabel">Diastolic</div><input class="sinput" type="number" value="${f.Diastolic||''}" oninput="editState.fields.Diastolic=this.value?parseInt(this.value):''"></div>
       <div class="sfield"><div class="slabel">Pulse</div><input class="sinput" type="number" value="${f.Pulse||''}" oninput="editState.fields.Pulse=this.value?parseInt(this.value):''"></div>
     </div>
-    <div class="sfield"><div class="slabel">Notes</div><input class="sinput" value="${f.Notes||''}" oninput="editState.fields.Notes=this.value"></div>`;
+    <div class="sfield"><div class="slabel">Notes</div><input class="sinput" value="${esc(f.Notes||'')}" oninput="editState.fields.Notes=this.value"></div>`;
   } else if(kind==='sleep'){
     html=`
     <div class="sfield"><div class="slabel">Quality (1–5)</div>
@@ -1775,7 +1790,7 @@ function renderEditForm(){
         </button>`).join('')}
       </div>
     </div>
-    <div class="sfield"><div class="slabel">Notes</div><input class="sinput" value="${f.Notes||''}" oninput="editState.fields.Notes=this.value"></div>`;
+    <div class="sfield"><div class="slabel">Notes</div><input class="sinput" value="${esc(f.Notes||'')}" oninput="editState.fields.Notes=this.value"></div>`;
   } else if(kind==='bw'){
     html=`
     <div class="sfield"><div class="slabel">Consistency (Bristol scale)</div>
@@ -1787,7 +1802,7 @@ function renderEditForm(){
         </button>`;
       }).join('')}</div>
     </div>
-    <div class="sfield"><div class="slabel">Notes</div><input class="sinput" value="${f.Notes||''}" oninput="editState.fields.Notes=this.value"></div>`;
+    <div class="sfield"><div class="slabel">Notes</div><input class="sinput" value="${esc(f.Notes||'')}" oninput="editState.fields.Notes=this.value"></div>`;
   } else if(kind==='hay'){
     html=`
     <div class="sfield"><div class="slabel">Severity (1–5)</div>
@@ -1796,7 +1811,7 @@ function renderEditForm(){
     <div class="sfield"><div class="slabel">Symptoms</div>
       <div class="chips-wrap">${HAY_SYMS.map(s=>`<button class="chip${(f.Symptoms||[]).includes(s)?' active':''}" onclick="editToggleFlag('Symptoms',${JSON.stringify(s)})">${s}</button>`).join('')}</div>
     </div>
-    <div class="sfield"><div class="slabel">Notes</div><input class="sinput" value="${f.Notes||''}" oninput="editState.fields.Notes=this.value"></div>`;
+    <div class="sfield"><div class="slabel">Notes</div><input class="sinput" value="${esc(f.Notes||'')}" oninput="editState.fields.Notes=this.value"></div>`;
   } else if(kind==='fit'){
     html=`
     <div class="sfield"><div class="slabel">Type</div>
@@ -1808,14 +1823,14 @@ function renderEditForm(){
         <div class="scale-row" style="gap:5px;margin-top:6px">${[1,2,3,4,5].map(n=>`<button class="sbtn${f.Intensity===n?' active':''}" style="min-width:30px" onclick="editSetScale('Intensity',${n})">${n}</button>`).join('')}</div>
       </div>
     </div>
-    <div class="sfield"><div class="slabel">Notes</div><input class="sinput" value="${f.Notes||''}" oninput="editState.fields.Notes=this.value"></div>`;
+    <div class="sfield"><div class="slabel">Notes</div><input class="sinput" value="${esc(f.Notes||'')}" oninput="editState.fields.Notes=this.value"></div>`;
   } else if(kind==='wb'){
     html=`
     <div class="sfield"><div class="slabel">Energy (1–5)</div>
       <div class="scale-row">${[1,2,3,4,5].map(n=>`<button class="sbtn${f.Energy===n?' active':''}" onclick="editSetScale('Energy',${n})">${n}</button>`).join('')}</div>
       <div class="scale-caps"><span>Drained</span><span>Excellent</span></div>
     </div>
-    <div class="sfield"><div class="slabel">Notes</div><input class="sinput" value="${f.Notes||''}" oninput="editState.fields.Notes=this.value"></div>`;
+    <div class="sfield"><div class="slabel">Notes</div><input class="sinput" value="${esc(f.Notes||'')}" oninput="editState.fields.Notes=this.value"></div>`;
   }
   html+=`<div class="sfield"><div class="slabel">Date &amp; Time</div><input type="datetime-local" class="sinput" value="${editState._datetime}" oninput="editState._datetime=this.value"></div>`;
   $('edit-body').innerHTML=html;
@@ -1827,8 +1842,8 @@ async function saveEditEntry(){
   btn.disabled=true;btn.textContent='Saving…';
   const dateISO=_datetime?new Date(_datetime).toISOString():fields.Date;
   const upd={...fields,Date:dateISO};
-  // Remove empty strings (Airtable rejects them for numeric fields)
-  Object.keys(upd).forEach(k=>{if(upd[k]===''||upd[k]===undefined)delete upd[k];});
+  // Emptied fields become null so Airtable clears them (deleting the key would keep the old value)
+  Object.keys(upd).forEach(k=>{if(upd[k]===''||upd[k]===undefined)upd[k]=null;});
   try {
     await updateRecord(TBLS[kind],id,upd);
     toast('Updated ✓');
